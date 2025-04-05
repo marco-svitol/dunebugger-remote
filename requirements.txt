@@ -1,0 +1,4 @@
+dotenv
+load_dotenv
+azure.messaging.webpubsubclient
+zmq
