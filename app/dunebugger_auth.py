@@ -1,6 +1,8 @@
-from dunebuggerlogging import logger
+from dunebugger_settings import settings
+from dunebuggger_logging import logger
 import http.client
 import json
+
 
 class AuthClient:
     def __init__(self, client_id, client_secret, username, password):
@@ -8,7 +10,7 @@ class AuthClient:
         self.client_secret = client_secret
         self.username = username
         self.password = password
-        self.conn = http.client.HTTPSConnection("dunebugger.eu.auth0.com")
+        self.conn = http.client.HTTPSConnection(settings.authURL)
         self.headers = {
             "Content-Type": "application/json",
         }

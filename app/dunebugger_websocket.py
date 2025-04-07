@@ -3,17 +3,19 @@ import time
 import os
 import socket
 import random
+import atexit
 from azure.messaging.webpubsubclient import WebPubSubClient
 from azure.messaging.webpubsubclient.models import CallbackType, WebPubSubDataType
-from dunebuggerlogging import logger
+from dunebuggger_logging import logger
 from dunebugger_settings import settings
 
+
 class WebPubSubListener:
-    def __init__(self):
+    def __init__(self, auth_client, message_handler):
         self.wss_url = ""
         self.client = None
-        self.auth_client = None
-        self.message_handler = None
+        self.auth_client = auth_client
+        self.message_handler = message_handler
         self.group_name = os.getenv("WS_GROUP_NAME")
         self.broadcastEnabled = settings.broadcastInitialState
         self.stop_event = threading.Event()
@@ -21,8 +23,8 @@ class WebPubSubListener:
         self.internet_check_thread = threading.Thread(target=self._monitor_internet, daemon=True)
         self.websocket_monitor_thread = threading.Thread(target=self._monitor_websocket, daemon=True)
         self.internet_check_thread.start()
+        atexit.register(self.stop)
         time.sleep(2)  # Allow some time for the internet check to initialize
-        # self.websocket_monitor_thread.start()
 
     def _setup_client(self):
         """Setup the WebSocket client with event subscriptions."""
@@ -38,6 +40,7 @@ class WebPubSubListener:
         self.client.subscribe(CallbackType.SERVER_MESSAGE, self._on_message_received)
         self.client.subscribe(CallbackType.REJOIN_GROUP_FAILED, lambda e: self._handle_rejoin_failure(e))
 
+    # TODO: not working
     def _monitor_internet(self):
         """Continuously check if the internet is available."""
         while not self.stop_event.is_set():
@@ -48,6 +51,7 @@ class WebPubSubListener:
                 self._restart()
             time.sleep(5)  # Check every 5 seconds
 
+    # TODO: not working
     def _monitor_websocket(self):
         """Ensure the WebSocket connection stays active when the internet is available."""
         while not self.stop_event.is_set():
@@ -102,7 +106,7 @@ class WebPubSubListener:
             self.client.close()
 
     def _on_message_received(self, e):
-        if e.data.get("type") not in ["ping", "pong"]  or random.random() < 0.05:
+        if e.data.get("type") not in ["ping", "pong"] or random.random() < 0.05:
             logger.debug(f"Message received from group {e.group}: {e.data}")
         """Handle received messages."""
         self.handle_message(e.data)
@@ -112,7 +116,7 @@ class WebPubSubListener:
 
     def send_log(self, message):
         self.message_handler.send_log(message)
-    
+
     def enable_broadcast(self):
         self.broadcastEnabled = True
 
@@ -122,7 +126,7 @@ class WebPubSubListener:
     def send_message(self, message):
         if self.client and self.client.is_connected:
             try:
-                if self.broadcastEnabled == True:
+                if self.broadcastEnabled is True:
                     self.client.send_to_group(self.group_name, message, WebPubSubDataType.JSON, no_echo=True)
                     if message.get("type") not in ["ping", "pong", "gpio_state"] or random.random() < 0.05:
                         logger.debug(f"Sending message to group {self.group_name}: {message}")
@@ -131,7 +135,7 @@ class WebPubSubListener:
             except Exception as e:
                 logger.error(f"Failed to send message to group ${self.group_name}: {e}")
         else:
-            if settings.remoteEnabled == True: 
+            if settings.remoteEnabled is True:
                 logger.warning("Cannot send message, WebSocket is disconnected.")
             else:
                 logger.debug("Cannot send message, WebSocket is not enabled.")
