@@ -1,5 +1,5 @@
 from dunebugger_settings import settings
-from dunebuggger_logging import logger
+from dunebugger_logging import logger
 import http.client
 import json
 

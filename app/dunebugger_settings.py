@@ -1,7 +1,7 @@
 from os import path
 import configparser
 from dotenv import load_dotenv
-from dunebuggger_logging import logger, get_logging_level_from_name, set_logger_level
+from dunebugger_logging import logger, get_logging_level_from_name, set_logger_level
 from utils import is_raspberry_pi
 
 
@@ -56,8 +56,10 @@ class DunebuggerSettings:
                 elif option in ["stateCheckIntervalSecs", "cyclePlayingResolutionSecs"]:
                     return int(value)
             elif section == "MessageQueue":
-                if option in ["mQueueMode", "mQueueAddress", "mQueueTopic"]:
+                if option in ["mQueueListenerAddress", "mQueueSenderAddress"]:
                     return str(value)
+                elif option in ["mQueueStateCheckIntervalSecs","mQueueCyclePlayingResolutionSecs"]:
+                    return int(value)
             elif section == "Log":
                 logLevel = get_logging_level_from_name(value)
                 if logLevel == "":

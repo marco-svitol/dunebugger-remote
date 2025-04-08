@@ -1,4 +1,4 @@
-from dunebuggger_logging import logger
+from dunebugger_logging import logger
 
 
 class MessageHandler:

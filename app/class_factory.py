@@ -17,12 +17,17 @@ websocket_message_handler = MessageHandler()
 websocket_client = WebPubSubListener(auth_client, websocket_message_handler)
 
 mqueue_handler = MessagingQueueHandler(websocket_message_handler)
-mqueue_client = ZeroMQComm(
-    mode=settings.mQueueMode,
-    address=settings.mQueueAddress,
+mqueue_listener = ZeroMQComm(
+    mode="REP",
+    address=settings.mQueueListenerAddress,
+    mqueue_handler=mqueue_handler,
+)
+mqueue_sender = ZeroMQComm(
+    mode="REQ",
+    address=settings.mQueueSenderAddress,
     mqueue_handler=mqueue_handler,
 )
 
-mqueue_handler.mqueue_client = mqueue_client
+mqueue_handler.mqueue_sender = mqueue_sender
 websocket_message_handler.websocket_client = websocket_client
-websocket_message_handler.mqueue_handler = mqueue_handler
+websocket_message_handler.messaging_queue_handler = mqueue_handler

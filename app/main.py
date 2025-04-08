@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 from dunebugger_settings import settings
-from class_factory import websocket_client, mqueue_client
-from dunebuggger_logging import logger
+from class_factory import websocket_client, mqueue_listener
+from dunebugger_logging import logger
 import time
 
 
 def main():
     # Start the listener with the callback
-    mqueue_client.start_listener()
+    mqueue_listener.start_listener()
     if settings.websocketEnabled is True:
         websocket_client.start()
 

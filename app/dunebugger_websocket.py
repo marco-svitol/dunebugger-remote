@@ -6,7 +6,7 @@ import random
 import atexit
 from azure.messaging.webpubsubclient import WebPubSubClient
 from azure.messaging.webpubsubclient.models import CallbackType, WebPubSubDataType
-from dunebuggger_logging import logger
+from dunebugger_logging import logger
 from dunebugger_settings import settings
 
 
