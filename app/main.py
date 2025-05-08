@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-import time
 import asyncio
 from dunebugger_settings import settings
 from class_factory import websocket_client, mqueue
 from dunebugger_logging import logger
+
 
 async def main():
     await mqueue.start()
@@ -16,6 +16,7 @@ async def main():
             await asyncio.sleep(0.1)  # Keep the main thread alive
     except KeyboardInterrupt:
         logger.info("Shutting down...")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

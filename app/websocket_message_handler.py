@@ -2,6 +2,7 @@ import time
 import threading
 from dunebugger_logging import logger
 
+
 class MessageHandler:
     def __init__(self, heartBeatEverySecs, heartBeatLoopDurationSecs):
         self.websocket_client = None
@@ -10,11 +11,11 @@ class MessageHandler:
         self.heartBeatLoopDurationSecs = heartBeatLoopDurationSecs
         self.countdown_timer = 0
         self.alive_message = {
-                "body": "I am alive",
-                "subject": "heartbeat",
-                "source": "controller",
-                "destination": "broadcast",
-            }
+            "body": "I am alive",
+            "subject": "heartbeat",
+            "source": "controller",
+            "destination": "broadcast",
+        }
         self.heartbeat_event = threading.Event()
         self.countdown_event = threading.Event()
         threading.Thread(target=self._send_heartbeat, daemon=True).start()

@@ -10,6 +10,7 @@ from azure.messaging.webpubsubclient.models import CallbackType, WebPubSubDataTy
 from dunebugger_logging import logger
 from dunebugger_settings import settings
 
+
 class WebPubSubListener:
     def __init__(self, auth_client, ws_message_handler):
         self.wss_url = ""
@@ -32,7 +33,7 @@ class WebPubSubListener:
         """Setup the WebSocket client with event subscriptions."""
         # Store the current event loop for later use in callbacks
         self.main_event_loop = asyncio.get_running_loop()
-        
+
         self.update_auth()
         self.client = WebPubSubClient(self.wss_url, auto_rejoin_groups=True, autoReconnect=True, reconnect_retry_total=2)
         self.client.subscribe(CallbackType.CONNECTED, lambda e: logger.info(f"Connected: {e.connection_id}"))
@@ -112,16 +113,16 @@ class WebPubSubListener:
 
     def _on_message_received(self, e):
         """Handle received messages synchronously."""
-        if e.data.get("subject") not in ["heartbeat"] or random.random() <= 1: #0.05:
+        if e.data.get("subject") not in ["heartbeat"] or random.random() <= 1:  # 0.05:
             logger.debug(f"Message received from group {e.group}: {e.data}")
-        
+
         # Use run_coroutine_threadsafe to run the async handler in the main event loop
         # This avoids the "no running event loop" error
         if self.main_event_loop and self.main_event_loop.is_running():
             asyncio.run_coroutine_threadsafe(self.handle_message(e.data), self.main_event_loop)
         else:
             logger.error("Cannot process message: No running event loop available")
-            
+
     async def handle_message(self, message):
         """Process the message asynchronously in the main event loop context."""
         try:
@@ -144,8 +145,8 @@ class WebPubSubListener:
             try:
                 if self.broadcastEnabled is True:
                     self.client.send_to_group(self.group_name, message, WebPubSubDataType.JSON, no_echo=True)
-                    #TODO: debug
-                    if message["subject"] not in ["heartbeat", "gpio_state"] or random.random() <= 1: #0.05:
+                    # TODO: debug
+                    if message["subject"] not in ["heartbeat", "gpio_state"] or random.random() <= 1:  # 0.05:
                         logger.debug(f"Sending websocket message to group {self.group_name}: {str(message)[:20]}")
                 else:
                     logger.debug("Broadcasting is disabled.")

@@ -1,7 +1,8 @@
-from nats.aio.client import Client as NATS 
+from nats.aio.client import Client as NATS
 import atexit
 import json
 from dunebugger_logging import logger
+
 
 class NATSComm:
     def __init__(self, nat_servers, client_id, subject_root, mqueue_handler):
@@ -60,14 +61,14 @@ class NATSComm:
         except Exception as e:
             logger.error(f"Failed to subscribe to {self.subject_root}.{self.client_id}.*: {e}")
             raise
-    
+
     async def send(self, message: dict, recipient: str):
         try:
             # Convert dictionary to JSON string, then encode to bytes
             subject = message["subject"]
             message_json = json.dumps(message)
             await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode())
-            #TODO: Debug remove
-            logger.debug(f"Sent message: {message}") 
+            # TODO: Debug remove
+            logger.debug(f"Sent message: {message}")
         except Exception as e:
             logger.error(f"Error sending message: {e}")
