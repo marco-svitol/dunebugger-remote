@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-from dunebugger_settings import settings
-from class_factory import websocket_client, mqueue_listener
-from dunebugger_logging import logger
 import time
+import asyncio
+from dunebugger_settings import settings
+from class_factory import websocket_client, mqueue
+from dunebugger_logging import logger
 
-
-def main():
-    # Start the listener with the callback
-    mqueue_listener.start_listener()
+async def main():
+    await mqueue.start()
     if settings.websocketEnabled is True:
-        websocket_client.start()
+        await websocket_client.start()
 
     try:
         logger.info("Listening for messages. Press Ctrl+C to exit.")
         while True:
-            time.sleep(0.1)  # Keep the main thread alive
+            await asyncio.sleep(0.1)  # Keep the main thread alive
     except KeyboardInterrupt:
         logger.info("Shutting down...")
 
-
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
+    logger.info("Main thread finished.")

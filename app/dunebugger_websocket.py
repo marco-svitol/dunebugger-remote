@@ -3,19 +3,19 @@ import time
 import os
 import socket
 import random
+import asyncio
 import atexit
 from azure.messaging.webpubsubclient import WebPubSubClient
 from azure.messaging.webpubsubclient.models import CallbackType, WebPubSubDataType
 from dunebugger_logging import logger
 from dunebugger_settings import settings
 
-
 class WebPubSubListener:
-    def __init__(self, auth_client, message_handler):
+    def __init__(self, auth_client, ws_message_handler):
         self.wss_url = ""
         self.client = None
         self.auth_client = auth_client
-        self.message_handler = message_handler
+        self.ws_message_handler = ws_message_handler
         self.group_name = os.getenv("WS_GROUP_NAME")
         self.broadcastEnabled = settings.broadcastInitialState
         self.stop_event = threading.Event()
@@ -23,11 +23,16 @@ class WebPubSubListener:
         self.internet_check_thread = threading.Thread(target=self._monitor_internet, daemon=True)
         self.websocket_monitor_thread = threading.Thread(target=self._monitor_websocket, daemon=True)
         self.internet_check_thread.start()
+        # Store reference to the main event loop for use in callback methods
+        self.main_event_loop = None
         atexit.register(self.stop)
         time.sleep(2)  # Allow some time for the internet check to initialize
 
-    def _setup_client(self):
+    async def _setup_client(self):
         """Setup the WebSocket client with event subscriptions."""
+        # Store the current event loop for later use in callbacks
+        self.main_event_loop = asyncio.get_running_loop()
+        
         self.update_auth()
         self.client = WebPubSubClient(self.wss_url, auto_rejoin_groups=True, autoReconnect=True, reconnect_retry_total=2)
         self.client.subscribe(CallbackType.CONNECTED, lambda e: logger.info(f"Connected: {e.connection_id}"))
@@ -69,15 +74,16 @@ class WebPubSubListener:
         except OSError:
             return False
 
-    def start(self):
+    async def start(self):
         if self.internet_available:
             try:
-                self._setup_client()
+                await self._setup_client()
                 self.client.open()
                 if not self.websocket_monitor_thread.is_alive():
                     self.websocket_monitor_thread.start()
                 self.client.join_group(self.group_name)
                 logger.info(f"Joined group: {self.group_name}")
+                self.ws_message_handler.dispatch_message("Is anyone there?", "heartbeat", "broadcast")
             except Exception as e:
                 logger.error(f"Failed to start WebSocket: {e}")
         else:
@@ -85,7 +91,6 @@ class WebPubSubListener:
 
     def _restart(self):
         logger.warning("Restarting WebSocket connection...")
-        # self._setup_client()
         self.start()
 
     def _handle_rejoin_failure(self, e):
@@ -106,16 +111,27 @@ class WebPubSubListener:
             self.client.close()
 
     def _on_message_received(self, e):
-        if e.data.get("type") not in ["ping", "pong"] or random.random() < 0.05:
+        """Handle received messages synchronously."""
+        if e.data.get("subject") not in ["heartbeat"] or random.random() <= 1: #0.05:
             logger.debug(f"Message received from group {e.group}: {e.data}")
-        """Handle received messages."""
-        self.handle_message(e.data)
-
-    def handle_message(self, message):
-        self.message_handler.process_message(message)
+        
+        # Use run_coroutine_threadsafe to run the async handler in the main event loop
+        # This avoids the "no running event loop" error
+        if self.main_event_loop and self.main_event_loop.is_running():
+            asyncio.run_coroutine_threadsafe(self.handle_message(e.data), self.main_event_loop)
+        else:
+            logger.error("Cannot process message: No running event loop available")
+            
+    async def handle_message(self, message):
+        """Process the message asynchronously in the main event loop context."""
+        try:
+            # Handle the message using the message handler
+            await self.ws_message_handler.process_websocket_message(message)
+        except Exception as exc:
+            logger.error(f"Error processing message: {exc}")
 
     def send_log(self, message):
-        self.message_handler.send_log(message)
+        self.ws_message_handler.send_log(message)
 
     def enable_broadcast(self):
         self.broadcastEnabled = True
@@ -128,8 +144,9 @@ class WebPubSubListener:
             try:
                 if self.broadcastEnabled is True:
                     self.client.send_to_group(self.group_name, message, WebPubSubDataType.JSON, no_echo=True)
-                    if message.get("type") not in ["ping", "pong", "gpio_state"] or random.random() < 0.05:
-                        logger.debug(f"Sending message to group {self.group_name}: {message}")
+                    #TODO: debug
+                    if message["subject"] not in ["heartbeat", "gpio_state"] or random.random() <= 1: #0.05:
+                        logger.debug(f"Sending websocket message to group {self.group_name}: {str(message)[:20]}")
                 else:
                     logger.debug("Broadcasting is disabled.")
             except Exception as e:
