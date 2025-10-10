@@ -145,9 +145,9 @@ class WebPubSubListener:
             try:
                 if self.broadcastEnabled is True:
                     self.client.send_to_group(self.group_name, message, WebPubSubDataType.JSON, no_echo=True)
-                    # TODO: debug
-                    if message["subject"] not in ["heartbeat", "gpio_state"] or random.random() <= 1:  # 0.05:
-                        logger.debug(f"Sending websocket message to group {self.group_name}: {str(message)[:20]}")
+                    # Too chatty: uncomment only for detailed tracing
+                    #if message["subject"] not in ["heartbeat", "gpio_state"] or random.random() <= 1:  # 0.05:
+                    #    logger.debug(f"Sending websocket message to group {self.group_name}: {str(message)[:20]}")
                 else:
                     logger.debug("Broadcasting is disabled.")
             except Exception as e:
