@@ -5,6 +5,9 @@ from dunebugger_websocket import WebPubSubListener
 from websocket_message_handler import MessageHandler
 from mqueue import NATSComm
 from mqueue_handler import MessagingQueueHandler
+from internet_monitor import InternetConnectionMonitor
+
+internet_monitor = InternetConnectionMonitor(test_domain=settings.testDomain, check_interval=settings.connectionIntervalSecs, timeout=settings.connectionTimeoutSecs)
 
 auth_client = AuthClient(
     client_id=os.getenv("AUTH0_CLIENT_ID"),
@@ -14,7 +17,7 @@ auth_client = AuthClient(
 )
 
 websocket_message_handler = MessageHandler(settings.heartBeatEverySecs, settings.heartBeatLoopDurationSecs)
-websocket_client = WebPubSubListener(auth_client, websocket_message_handler)
+websocket_client = WebPubSubListener(internet_monitor, auth_client, websocket_message_handler)
 
 mqueue_handler = MessagingQueueHandler(websocket_message_handler)
 mqueue = NATSComm(
@@ -27,3 +30,7 @@ mqueue = NATSComm(
 mqueue_handler.mqueue_sender = mqueue
 websocket_message_handler.websocket_client = websocket_client
 websocket_message_handler.messaging_queue_handler = mqueue_handler
+
+# Start internet monitoring if WebSocket is enabled
+if settings.websocketEnabled is True:
+    internet_monitor.start_monitoring()
