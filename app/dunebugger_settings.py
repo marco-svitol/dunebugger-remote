@@ -43,8 +43,10 @@ class DunebuggerSettings:
             elif section == "Websocket":
                 if option in ["websocketEnabled", "broadcastInitialState"]:
                     return self.config.getboolean(section, option)
-                elif option in ["stateCheckIntervalSecs", "cyclePlayingResolutionSecs", "heartBeatLoopDurationSecs", "heartBeatEverySecs"]:
+                elif option in ["stateCheckIntervalSecs", "cyclePlayingResolutionSecs", "heartBeatLoopDurationSecs", "heartBeatEverySecs", "connectionIntervalSecs", "connectionTimeoutSecs"]:
                     return int(value)
+                elif option in ["testDomain"]:
+                    return str(value)
             elif section == "MessageQueue":
                 if option in ["mQueueServers", "mQueueClientID", "mQueueSubjectRoot"]:
                     return str(value)
