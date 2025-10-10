@@ -13,7 +13,6 @@ class NATSComm:
         self.mqueue_handler = mqueue_handler
 
         self.nc.on_connect = lambda nc: logger.info(f"Connected to NATS server: {self.servers}")
-        atexit.register(self.close)
 
     async def disconnected_cb(self):
         logger.warning("Disconnected from NATS server")
@@ -25,8 +24,13 @@ class NATSComm:
         logger.error(f"Error occurred: {error}")
 
     async def close(self):
-        await self.nc.drain()
-        logger.debug("NATS connection closed")
+        """Async method to properly close NATS connection"""
+        try:
+            if self.nc.is_connected:
+                await self.nc.drain()
+                logger.debug("NATS connection closed")
+        except Exception as e:
+            logger.error(f"Error closing NATS connection: {e}")
 
     async def connect(self):
         await self.nc.connect(
@@ -42,7 +46,8 @@ class NATSComm:
 
     async def _handler(self, mqueue_message):
         try:
-            await self.mqueue_handler.process_mqueue_message(mqueue_message)
+            command_reply_message = await self.mqueue_handler.process_mqueue_message(mqueue_message)
+            logger.debug(command_reply_message)
         except Exception as e:
             logger.error(f"Error processing message: {e}")
 
@@ -62,13 +67,16 @@ class NATSComm:
             logger.error(f"Failed to subscribe to {self.subject_root}.{self.client_id}.*: {e}")
             raise
 
-    async def send(self, message: dict, recipient: str):
+    async def send(self, message: dict, recipient, reply_subject=None):
         try:
             # Convert dictionary to JSON string, then encode to bytes
             subject = message["subject"]
             message_json = json.dumps(message)
-            await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode())
-            # TODO: Debug remove
-            logger.debug(f"Sent message: {message}")
+            if reply_subject:
+                await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode(), reply_to=reply_subject)
+            else:
+                await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode())
+            # Too chatty: uncommento only for detailed tracing
+            #logger.debug(f"Sent message: {str(message)[:20]}")
         except Exception as e:
             logger.error(f"Error sending message: {e}")

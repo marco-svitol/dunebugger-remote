@@ -26,7 +26,7 @@ class MessagingQueueHandler:
             subject = (mqueue_message.subject).split(".")[2]
             logger.debug(f"Processing message: {str(message_json)[:20]}. Subject: {subject}. Reply to: {mqueue_message.reply}")
 
-            if subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log"]:
+            if subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "schedule", "schedule_next"]:
                 self.websocket_message_handler.dispatch_message(message_json["body"], message_json["subject"])
             else:
                 logger.warning(f"Unknown subjcet: {subject}. Ignoring message.")
@@ -34,3 +34,5 @@ class MessagingQueueHandler:
             logger.error(f"KeyError: {key_error}. Message: {message_json}")
         except Exception as e:
             logger.error(f"Error processing message: {e}. Message: {message_json}")
+
+        return f"Processed message with subject: {subject}"

@@ -28,8 +28,11 @@ class MessageHandler:
             if subject in ["heartbeat"]:
                 self.websocket_client.send_message(self.alive_message)
                 self.handle_heartbeat()
-            elif subject in ["dunebugger_set", "refresh"]:
+            elif subject in ["dunebugger_set"]:
                 await self.messaging_queue_handler.mqueue_sender.send(websocket_message, "core")
+            elif subject in ["refresh"]:
+                await self.messaging_queue_handler.mqueue_sender.send(websocket_message, "core")
+                await self.messaging_queue_handler.mqueue_sender.send(websocket_message, "scheduler")
             else:
                 logger.warning(f"Unknown subject: {subject}. Ignoring message.")
 
