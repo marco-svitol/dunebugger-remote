@@ -24,7 +24,12 @@ class MessageHandler:
     async def process_websocket_message(self, websocket_message):
         try:
             subject = websocket_message["subject"]
+            source = websocket_message.get("source", "unknown")
 
+            if source == "controller":
+                logger.debug("Ignoring message from self.")
+                return
+            
             if subject in ["heartbeat"]:
                 self.websocket_client.send_message(self.alive_message)
                 self.handle_heartbeat()
