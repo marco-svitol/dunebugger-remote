@@ -172,3 +172,14 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Security: Environment variables and secrets
+.env
+.env.local
+.env.*.local
+secrets/
+*.secret
+*.key
+
+# Docker secrets
+docker-secrets/
