@@ -77,6 +77,6 @@ class NATSComm:
             else:
                 await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode())
             # Too chatty: uncommento only for detailed tracing
-            #logger.debug(f"Sent message: {str(message)[:20]}")
+            logger.debug(f"Sent message: {str(message)}")#[:20]}")
         except Exception as e:
             logger.error(f"Error sending message: {e}")
