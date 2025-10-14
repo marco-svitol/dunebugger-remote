@@ -6,7 +6,7 @@ from dunebugger_logging import logger
 
 
 async def main():
-    await mqueue.start()
+    await mqueue.start_listener()
     if settings.websocketEnabled is True:
         await websocket_client.start()
 
@@ -16,6 +16,10 @@ async def main():
             await asyncio.sleep(0.1)  # Keep the main thread alive
     except KeyboardInterrupt:
         logger.info("Shutting down...")
+    finally:
+        await mqueue.close_listener()
+        if settings.websocketEnabled is True:
+            await websocket_client.close()
 
 
 if __name__ == "__main__":

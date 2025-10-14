@@ -12,7 +12,7 @@ class NATSComm:
         self.subject_root = subject_root
         self.mqueue_handler = mqueue_handler
 
-        self.nc.on_connect = lambda nc: logger.info(f"Connected to NATS server: {self.servers}")
+        self.nc.on_connect = lambda nc: logger.info(f"Connected to NATS messaging server: {self.servers}")
 
     async def disconnected_cb(self):
         logger.warning("Disconnected from NATS server")
@@ -23,7 +23,7 @@ class NATSComm:
     async def error_cb(self, error):
         logger.error(f"Error occurred: {error}")
 
-    async def close(self):
+    async def close_listener(self):
         """Async method to properly close NATS connection"""
         try:
             if self.nc.is_connected:
@@ -42,6 +42,7 @@ class NATSComm:
             reconnected_cb=self.reconnected_cb,
             disconnected_cb=self.disconnected_cb,
             error_cb=self.error_cb,
+            max_reconnect_attempts=-1,  # Unlimited reconnect attempts
         )
 
     async def _handler(self, mqueue_message):
@@ -51,20 +52,20 @@ class NATSComm:
         except Exception as e:
             logger.error(f"Error processing message: {e}")
 
-    async def start(self):
+    async def start_listener(self):
         try:
             await self.connect()
-            logger.info(f"Connected to NATS server: {self.servers}")
+            logger.info(f"Connected to NATS messaging server: {self.servers}")
         except Exception as e:
-            logger.error(f"Failed to connect to NATS server: {e}")
+            logger.error(f"Failed to connect to NATS messaging server: {e}")
             raise
 
         try:
             await self.nc.subscribe(f"{self.subject_root}.{self.client_id}.*", cb=self._handler)
             await self.nc.flush()
-            logger.info(f"Listening for messages on {self.subject_root}.{self.client_id}.")
+            logger.info(f"Listening for messages on queue {self.subject_root}.{self.client_id}.")
         except Exception as e:
-            logger.error(f"Failed to subscribe to {self.subject_root}.{self.client_id}.*: {e}")
+            logger.error(f"Failed to subscribe to messaging queue {self.subject_root}.{self.client_id}.*: {e}")
             raise
 
     async def send(self, message: dict, recipient, reply_subject=None):
