@@ -1,6 +1,7 @@
 import time
 import threading
 from dunebugger_logging import logger
+from dunebugger_system_info import SystemInfoModel
 
 
 class MessageHandler:
@@ -18,6 +19,7 @@ class MessageHandler:
         }
         self.heartbeat_event = threading.Event()
         self.countdown_event = threading.Event()
+        self.system_info_model = SystemInfoModel()
         threading.Thread(target=self._send_heartbeat, daemon=True).start()
         threading.Thread(target=self._countdown, daemon=True).start()
 
@@ -33,6 +35,9 @@ class MessageHandler:
             if subject in ["heartbeat"]:
                 self.websocket_client.send_message(self.alive_message)
                 self.handle_heartbeat()
+            elif subject in ["system_info"]:
+                system_info_message = self.system_info_model.create_websocket_message()
+                self.websocket_client.send_message(system_info_message)
             elif subject in ["dunebugger_set"]:
                 await self.messaging_queue_handler.mqueue_sender.send(websocket_message, "core")
             elif subject in ["refresh"]:
@@ -83,3 +88,12 @@ class MessageHandler:
     def send_log(self, log_message):
         data = {"body": log_message, "subject": "log", "source": "controller"}
         self.websocket_client.send_message(data)
+    
+    def send_system_info(self):
+        """Send system information on startup or on demand"""
+        try:
+            system_info_message = self.system_info_model.create_websocket_message()
+            self.websocket_client.send_message(system_info_message)
+            logger.info("System information sent successfully")
+        except Exception as e:
+            logger.error(f"Failed to send system information: {e}")
