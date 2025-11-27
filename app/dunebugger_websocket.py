@@ -38,7 +38,7 @@ class WebPubSubListener:
 
         self.update_auth()
         self.client = WebPubSubClient(self.wss_url, auto_rejoin_groups=True, autoReconnect=True, reconnect_retry_total=2)
-        self.client.subscribe(CallbackType.CONNECTED, lambda e: logger.info(f"Connected: {e.connection_id}"))
+        self.client.subscribe(CallbackType.CONNECTED, lambda e: self._on_websocket_connected(e))
         self.client.subscribe(
             CallbackType.DISCONNECTED,
             lambda e: self._handle_websocket_disconnection(e),
@@ -268,6 +268,16 @@ class WebPubSubListener:
         # Run retry in a separate thread
         retry_thread = threading.Thread(target=retry_connection, daemon=True, name="WebSocket-Retry")
         retry_thread.start()
+
+    def _on_websocket_connected(self, e):
+        """Handle WebSocket connection established."""
+        logger.info(f"Connected: {e.connection_id}")
+        
+        # Send system info on connection
+        try:
+            self.ws_message_handler.send_system_info()
+        except Exception as exc:
+            logger.error(f"Failed to send system info on connection: {exc}")
 
     def _on_message_received(self, e):
         """Handle received messages synchronously."""

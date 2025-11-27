@@ -24,7 +24,7 @@ class MessagingQueueHandler:
 
         try:
             subject = (mqueue_message.subject).split(".")[2]
-            logger.debug(f"Processing message: {str(message_json)[:20]}. Subject: {subject}. Reply to: {mqueue_message.reply}")
+            logger.debug(f"Processing message: {message_json}. Subject: {subject}. Reply to: {mqueue_message.reply}")
 
             if subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "schedule", "schedule_next"]:
                 self.websocket_message_handler.dispatch_message(message_json["body"], message_json["subject"])

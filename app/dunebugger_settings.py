@@ -34,7 +34,7 @@ class DunebuggerSettings:
         try:
             if section == "General":
                 if option in [
-                    "general_setting",
+                    "general_setting"
                 ]:
                     return str(value)
             elif section == "Auth":
