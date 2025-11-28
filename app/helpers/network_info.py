@@ -15,7 +15,7 @@ from dunebugger_logging import logger
 
 class NetworkInfoHelper:
     def __init__(self):
-        pass
+        self.is_docker = self._is_running_in_docker()
     
     def get_network_info(self) -> Dict[str, Any]:
         """
@@ -55,6 +55,10 @@ class NetworkInfoHelper:
             for interface_name, addresses in net_if_addrs.items():
                 # Skip loopback interface
                 if interface_name == 'lo':
+                    continue
+                
+                # Skip Docker-related interfaces when running in Docker with host networking
+                if self.is_docker and self._is_docker_interface(interface_name):
                     continue
                 
                 interface_info = {
@@ -283,6 +287,34 @@ class NetworkInfoHelper:
             logger.debug(f"Could not ping gateway {gateway_ip}: {e}")
         
         return None
+    
+    def _is_running_in_docker(self) -> bool:
+        """
+        Check if we are running inside a Docker container
+        """
+        try:
+            # Check for .dockerenv file (created by Docker)
+            if os.path.exists('/.dockerenv'):
+                return True
+            
+            # Check cgroup for docker
+            with open('/proc/1/cgroup', 'r') as f:
+                return 'docker' in f.read()
+        except Exception:
+            return False
+    
+    def _is_docker_interface(self, interface_name: str) -> bool:
+        """
+        Check if an interface is Docker-related and should be filtered out
+        """
+        docker_prefixes = [
+            'docker',     # Docker bridge interfaces
+            'br-',        # Docker bridge interfaces
+            'veth',       # Virtual ethernet pairs used by Docker
+        ]
+        
+        interface_lower = interface_name.lower()
+        return any(interface_lower.startswith(prefix) for prefix in docker_prefixes)
     
     def _get_minimal_network_info(self) -> Dict[str, Any]:
         """

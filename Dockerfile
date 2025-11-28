@@ -6,9 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
-# Install system dependencies
+# Install system dependencies and build tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        gcc \
+        python3-dev \
+        build-essential \
+        iproute2 \
+        wireless-tools \
+        net-tools \
+        iputils-ping \
+        procps \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -20,7 +28,12 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get update && \
+    apt-get remove -y gcc python3-dev build-essential && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
 
 # Copy application code
 COPY app/ ./app/

@@ -63,6 +63,14 @@ class SystemInfoModel:
         """
         Get the state of a systemctl service
         """
+        # Check if we're running in a Docker container
+        if self._is_running_in_docker():
+            logger.debug(f"Running in Docker container, cannot check systemctl service {service_name}")
+            if service_name == "dunebugger.service":
+                # Try to check if the service is running on the host via Docker
+                return self._get_docker_host_service_state(service_name)
+            return "docker_container"
+        
         try:
             result = subprocess.run(
                 ["systemctl", "is-active", service_name],
@@ -89,6 +97,30 @@ class SystemInfoModel:
         except Exception as e:
             logger.error(f"Error checking service state for {service_name}: {e}")
             return "unknown"
+    
+    def _is_running_in_docker(self) -> bool:
+        """
+        Check if we are running inside a Docker container
+        """
+        try:
+            # Check for .dockerenv file (created by Docker)
+            if os.path.exists('/.dockerenv'):
+                return True
+            
+            # Check cgroup for docker
+            with open('/proc/1/cgroup', 'r') as f:
+                return 'docker' in f.read()
+        except Exception:
+            return False
+    
+    def _get_docker_host_service_state(self, service_name: str) -> str:
+        """
+        Try to check service state on Docker host (limited functionality)
+        """
+        # In a Docker container, we can't easily check host systemctl
+        # This would require special Docker configurations
+        logger.debug(f"Cannot check host service {service_name} from Docker container")
+        return "host_service_unknown"
     
     def _get_location_info(self) -> Dict[str, str]:
         """
