@@ -26,7 +26,10 @@ class MessagingQueueHandler:
             subject = (mqueue_message.subject).split(".")[2]
             logger.debug(f"Processing message: {message_json}. Subject: {subject}. Reply to: {mqueue_message.reply}")
 
-            if subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "schedule", "schedule_next"]:
+            if subject == "heartbeat" and message_json.get("source") == "core":
+                # Handle heartbeat reply from dunebugger core
+                self.websocket_message_handler.system_info_model.set_heartbeat_core_alive()
+            elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "schedule", "schedule_next"]:
                 self.websocket_message_handler.dispatch_message(message_json["body"], message_json["subject"])
             else:
                 logger.warning(f"Unknown subjcet: {subject}. Ignoring message.")

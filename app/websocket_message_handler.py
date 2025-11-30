@@ -1,5 +1,6 @@
 import time
 import threading
+import asyncio
 from dunebugger_logging import logger
 from dunebugger_system_info import SystemInfoModel
 
@@ -20,6 +21,15 @@ class MessageHandler:
         self.heartbeat_event = threading.Event()
         self.countdown_event = threading.Event()
         self.system_info_model = SystemInfoModel()
+        
+        # Core heartbeat monitoring
+        self.core_heartbeat_message = {
+            "body": "are you there?",
+            "subject": "heartbeat",
+            "source": "controller"
+        }
+        self._heartbeat_task = None
+        
         threading.Thread(target=self._send_heartbeat, daemon=True).start()
         threading.Thread(target=self._countdown, daemon=True).start()
 
@@ -97,3 +107,30 @@ class MessageHandler:
             logger.info("System information sent successfully")
         except Exception as e:
             logger.error(f"Failed to send system information: {e}")
+    
+    async def start_core_heartbeat(self):
+        """Start the async heartbeat task"""
+        if self._heartbeat_task is None:
+            self._heartbeat_task = asyncio.create_task(self._send_core_heartbeat_loop())
+            logger.info("Core heartbeat monitoring started")
+    
+    async def _send_core_heartbeat_loop(self):
+        """Send heartbeat to core component every 30 seconds"""
+        while True:
+            try:
+                await asyncio.sleep(30)  # Wait 30 seconds between heartbeats
+                
+                if self.messaging_queue_handler and self.messaging_queue_handler.mqueue_sender:
+                    await self.messaging_queue_handler.mqueue_sender.send(
+                        self.core_heartbeat_message, 
+                        "core"
+                    )
+                    logger.debug("Core heartbeat sent")
+                else:
+                    logger.debug("Messaging queue handler not available for heartbeat")
+            except asyncio.CancelledError:
+                logger.info("Core heartbeat monitoring stopped")
+                break
+            except Exception as e:
+                logger.error(f"Error sending core heartbeat: {e}")
+                # Continue the loop even if there's an error

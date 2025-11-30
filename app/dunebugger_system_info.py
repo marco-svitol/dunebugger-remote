@@ -5,7 +5,7 @@ Collects and structures system information for transmission to remote systems
 """
 
 import os
-import subprocess
+import time
 from datetime import datetime, timezone
 from typing import Dict, Any
 from dunebugger_logging import logger
@@ -20,6 +20,30 @@ class SystemInfoModel:
         self.hardware_helper = HardwareInfoHelper()
         self.os_helper = OSInfoHelper()
         self.network_helper = NetworkInfoHelper()
+        
+        # Heartbeat core flag with TTL (45 seconds)
+        self._heartbeat_core_alive = False
+        self._heartbeat_core_timestamp = 0
+        self._heartbeat_ttl = 45  # seconds
+    
+    def set_heartbeat_core_alive(self):
+        """Set the heartbeat core flag to alive and update timestamp"""
+        self._heartbeat_core_alive = True
+        self._heartbeat_core_timestamp = time.time()
+        logger.debug("Heartbeat core flag set to alive")
+    
+    def is_heartbeat_core_alive(self) -> bool:
+        """Check if the heartbeat core flag is alive (within TTL)"""
+        if not self._heartbeat_core_alive:
+            return False
+        
+        current_time = time.time()
+        if current_time - self._heartbeat_core_timestamp > self._heartbeat_ttl:
+            self._heartbeat_core_alive = False
+            logger.debug("Heartbeat core flag expired (TTL exceeded)")
+            return False
+        
+        return True
         
     def get_system_info(self) -> Dict[str, Any]:
         """
@@ -45,8 +69,8 @@ class SystemInfoModel:
         """
         Get information about DuneBugger components
         """
-        # Get dunebugger component state from systemctl
-        dunebugger_state = self._get_service_state("dunebugger.service")
+        # Use heartbeat flag to determine dunebugger core state
+        dunebugger_state = "running" if self.is_heartbeat_core_alive() else "not_responding"
         
         return [
             {
@@ -59,68 +83,7 @@ class SystemInfoModel:
             }
         ]
     
-    def _get_service_state(self, service_name: str) -> str:
-        """
-        Get the state of a systemctl service
-        """
-        # Check if we're running in a Docker container
-        if self._is_running_in_docker():
-            logger.debug(f"Running in Docker container, cannot check systemctl service {service_name}")
-            if service_name == "dunebugger.service":
-                # Try to check if the service is running on the host via Docker
-                return self._get_docker_host_service_state(service_name)
-            return "docker_container"
-        
-        try:
-            result = subprocess.run(
-                ["systemctl", "is-active", service_name],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            # systemctl is-active returns "active" for running services
-            state = result.stdout.strip()
-            
-            # Map systemctl states to our expected states
-            if state == "active":
-                return "running"
-            elif state == "inactive":
-                return "stopped"
-            elif state == "failed":
-                return "failed"
-            else:
-                return state  # Return whatever systemctl reports
-                
-        except subprocess.TimeoutExpired:
-            logger.error(f"Timeout checking service state for {service_name}")
-            return "unknown"
-        except Exception as e:
-            logger.error(f"Error checking service state for {service_name}: {e}")
-            return "unknown"
-    
-    def _is_running_in_docker(self) -> bool:
-        """
-        Check if we are running inside a Docker container
-        """
-        try:
-            # Check for .dockerenv file (created by Docker)
-            if os.path.exists('/.dockerenv'):
-                return True
-            
-            # Check cgroup for docker
-            with open('/proc/1/cgroup', 'r') as f:
-                return 'docker' in f.read()
-        except Exception:
-            return False
-    
-    def _get_docker_host_service_state(self, service_name: str) -> str:
-        """
-        Try to check service state on Docker host (limited functionality)
-        """
-        # In a Docker container, we can't easily check host systemctl
-        # This would require special Docker configurations
-        logger.debug(f"Cannot check host service {service_name} from Docker container")
-        return "host_service_unknown"
+
     
     def _get_location_info(self) -> Dict[str, str]:
         """
