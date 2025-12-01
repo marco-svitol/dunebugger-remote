@@ -5,6 +5,7 @@ services:
     platform: linux/arm64
     container_name: dunebugger-remote
     restart: unless-stopped
+    network_mode: host  # Use host networking to access Raspberry Pi interfaces
     env_file:
       - .env
     environment:
@@ -12,8 +13,9 @@ services:
     volumes:
       # Mount config directory for easy configuration updates
       - /etc/dunebugger-remote/config:/app/app/config:ro
-    networks:
-      - dunebugger-network
+      # Mount host proc and sys for network information
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
     depends_on:
       - nats-server
 
@@ -23,19 +25,7 @@ services:
     platform: linux/arm64
     container_name: nats-server
     restart: unless-stopped
-    ports:
-      - "4222:4222"
-      - "8222:8222"  # HTTP monitoring port
-    networks:
-      - dunebugger-network
+    network_mode: host  # Use host networking to match dunebugger-remote
+    # Note: ports are not needed with host networking - they're directly exposed
     # NATS server command with monitoring and debug/verbose flags
     command: ["-m", "8222", "-DV"]
-
-# Create a custom network that other containers can join
-networks:
-  dunebugger-network:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.20.0.0/16

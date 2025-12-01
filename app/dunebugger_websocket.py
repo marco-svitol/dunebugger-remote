@@ -34,8 +34,6 @@ class WebPubSubListener:
 
     async def _setup_client(self):
         """Setup the WebSocket client with event subscriptions."""
-
-
         self.update_auth()
         self.client = WebPubSubClient(self.wss_url, auto_rejoin_groups=True, autoReconnect=True, reconnect_retry_total=2)
         self.client.subscribe(CallbackType.CONNECTED, lambda e: self._on_websocket_connected(e))
@@ -108,7 +106,7 @@ class WebPubSubListener:
                 logger.info("Scheduling WebSocket connection retry due to failure")
                 self._schedule_connection_retry(delay=15)
             
-            raise  # Re-raise to let caller know it failed
+            #raise  # Re-raise to let caller know it failed
 
     def _handle_rejoin_failure(self, e):
         logger.error(f"Failed to rejoin group {e.group}: {e.error}")
@@ -131,8 +129,6 @@ class WebPubSubListener:
     def update_auth(self):
         self.auth_client._update_user_info()
         self.wss_url = self.auth_client.wss_url
-        logger.debug(self.wss_url)
-        # self.group_name = self.auth_client.user_id
 
     def stop(self):
         """Stops all monitoring threads and closes the WebSocket connection."""

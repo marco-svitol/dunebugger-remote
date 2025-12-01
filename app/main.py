@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 from dunebugger_settings import settings
-from class_factory import websocket_client, mqueue
+from class_factory import websocket_client, mqueue, websocket_message_handler
 from dunebugger_logging import logger
 
 
@@ -9,6 +9,9 @@ async def main():
     await mqueue.start_listener()
     if settings.websocketEnabled is True:
         await websocket_client.start()
+    
+    # Start core heartbeat monitoring
+    await websocket_message_handler.start_core_heartbeat()
 
     try:
         logger.info("Listening for messages. Press Ctrl+C to exit.")
