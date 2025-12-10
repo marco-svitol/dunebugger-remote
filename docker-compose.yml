@@ -1,8 +1,7 @@
 version: '3.8'
 services:                                                                                                                                                                                      
   dunebugger-remote:
-    image: dunebugger-remote:latest
-    platform: linux/arm64
+    image: ilciclaio/dunebugger-remote:latest
     container_name: dunebugger-remote
     restart: unless-stopped
     network_mode: host  # Use host networking to access Raspberry Pi interfaces
@@ -22,7 +21,6 @@ services:
   # NATS server for message queue (based on your config)
   nats-server:
     image: nats:latest
-    platform: linux/arm64
     container_name: nats-server
     restart: unless-stopped
     network_mode: host  # Use host networking to match dunebugger-remote
