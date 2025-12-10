@@ -29,10 +29,13 @@ class MessagingQueueHandler:
             if subject == "heartbeat" and message_json.get("source") == "core":
                 # Handle heartbeat reply from dunebugger core
                 self.websocket_message_handler.system_info_model.set_heartbeat_core_alive()
-            elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "schedule", "schedule_next"]:
+            elif subject == "heartbeat" and message_json.get("source") == "scheduler":
+                # Handle heartbeat reply from dunebugger scheduler
+                self.websocket_message_handler.system_info_model.set_heartbeat_scheduler_alive()
+            elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "current_schedule", "next_actions", "last_executed_action"]:
                 self.websocket_message_handler.dispatch_message(message_json["body"], message_json["subject"])
             else:
-                logger.warning(f"Unknown subjcet: {subject}. Ignoring message.")
+                logger.warning(f"Unknown subject: {subject}. Ignoring message.")
         except KeyError as key_error:
             logger.error(f"KeyError: {key_error}. Message: {message_json}")
         except Exception as e:

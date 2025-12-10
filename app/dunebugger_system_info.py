@@ -25,12 +25,22 @@ class SystemInfoModel:
         self._heartbeat_core_alive = False
         self._heartbeat_core_timestamp = 0
         self._heartbeat_ttl = 45  # seconds
+        
+        # Heartbeat scheduler flag with TTL (45 seconds)
+        self._heartbeat_scheduler_alive = False
+        self._heartbeat_scheduler_timestamp = 0
     
     def set_heartbeat_core_alive(self):
         """Set the heartbeat core flag to alive and update timestamp"""
         self._heartbeat_core_alive = True
         self._heartbeat_core_timestamp = time.time()
         logger.debug("Heartbeat core flag set to alive")
+    
+    def set_heartbeat_scheduler_alive(self):
+        """Set the heartbeat scheduler flag to alive and update timestamp"""
+        self._heartbeat_scheduler_alive = True
+        self._heartbeat_scheduler_timestamp = time.time()
+        logger.debug("Heartbeat scheduler flag set to alive")
     
     def is_heartbeat_core_alive(self) -> bool:
         """Check if the heartbeat core flag is alive (within TTL)"""
@@ -41,6 +51,19 @@ class SystemInfoModel:
         if current_time - self._heartbeat_core_timestamp > self._heartbeat_ttl:
             self._heartbeat_core_alive = False
             logger.debug("Heartbeat core flag expired (TTL exceeded)")
+            return False
+        
+        return True
+    
+    def is_heartbeat_scheduler_alive(self) -> bool:
+        """Check if the heartbeat scheduler flag is alive (within TTL)"""
+        if not self._heartbeat_scheduler_alive:
+            return False
+        
+        current_time = time.time()
+        if current_time - self._heartbeat_scheduler_timestamp > self._heartbeat_ttl:
+            self._heartbeat_scheduler_alive = False
+            logger.debug("Heartbeat scheduler flag expired (TTL exceeded)")
             return False
         
         return True
@@ -69,13 +92,18 @@ class SystemInfoModel:
         """
         Get information about DuneBugger components
         """
-        # Use heartbeat flag to determine dunebugger core state
+        # Use heartbeat flags to determine component states
         dunebugger_state = "running" if self.is_heartbeat_core_alive() else "not_responding"
+        scheduler_state = "running" if self.is_heartbeat_scheduler_alive() else "not_responding"
         
         return [
             {
                 "name": "dunebugger",
                 "state": dunebugger_state
+            },
+            {
+                "name": "scheduler",
+                "state": scheduler_state
             },
             {
                 "name": "dunebugger-remote",

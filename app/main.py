@@ -11,7 +11,7 @@ async def main():
         await websocket_client.start()
     
     # Start core heartbeat monitoring
-    await websocket_message_handler.start_core_heartbeat()
+    await websocket_message_handler.start_components_heartbeat()
 
     try:
         logger.info("Listening for messages. Press Ctrl+C to exit.")

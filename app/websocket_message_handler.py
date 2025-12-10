@@ -23,7 +23,7 @@ class MessageHandler:
         self.system_info_model = SystemInfoModel()
         
         # Core heartbeat monitoring
-        self.core_heartbeat_message = {
+        self.component_heartbeat_message = {
             "body": "are you there?",
             "subject": "heartbeat",
             "source": "controller"
@@ -35,34 +35,47 @@ class MessageHandler:
 
     async def process_websocket_message(self, websocket_message):
         try:
-            subject = websocket_message["subject"]
+            original_subject = websocket_message["subject"]
             source = websocket_message.get("source", "unknown")
 
             if source == "controller":
                 logger.debug("Ignoring message from self.")
                 return
             
-            if subject in ["heartbeat"]:
-                self.websocket_client.send_message(self.alive_message)
-                self.handle_heartbeat()
-            elif subject in ["system_info"]:
-                system_info_message = self.system_info_model.create_websocket_message()
-                self.websocket_client.send_message(system_info_message)
-            elif subject in ["dunebugger_set"]:
-                await self.messaging_queue_handler.mqueue_sender.send(websocket_message, "core")
-            elif subject in ["refresh"]:
-                await self.messaging_queue_handler.mqueue_sender.send(websocket_message, "core")
-                await self.messaging_queue_handler.mqueue_sender.send(websocket_message, "scheduler")
+            # Split subject into recipient and subject if it contains a dot
+            recipient = None
+            subject = original_subject
+            
+            if "." in original_subject:
+                parts = original_subject.split(".", 1)  # Split on first dot only
+                recipient = parts[0]
+                subject = parts[1]
+                logger.debug(f"Split subject '{original_subject}' into recipient='{recipient}' and subject='{subject}'")
+                # Create a modified message with the new subject
+                modified_message = websocket_message.copy()
+                modified_message["subject"] = subject
+
+            if recipient in ["core", "scheduler"]:
+                await self.messaging_queue_handler.mqueue_sender.send(modified_message, recipient)
+                logger.debug(f"Message routed to recipient '{recipient}' with subject '{subject}'")
+            elif recipient in ["controller"]:
+                # Handle messages without recipients using existing logic
+                if subject in ["heartbeat"]: #controller heartbeat
+                    self.websocket_client.send_message(self.alive_message)
+                    self.handle_heartbeat()
+                elif subject in ["system_info"]: #controller requests system info
+                    system_info_message = self.system_info_model.create_websocket_message()
+                    self.websocket_client.send_message(system_info_message)
+                else:
+                    logger.debug(f"Unknown subject for controller recipient: {subject}. Ignoring message.")
             else:
-                logger.warning(f"Unknown subject: {subject}. Ignoring message.")
+                logger.debug(f"No recipient specified or unkown recipient, ignoring recipient routing for subject '{original_subject}'")
+
 
         except KeyError as key_error:
             logger.error(f"KeyError: {key_error}. Message: {websocket_message}")
         except Exception as e:
             logger.error(f"Error processing message: {e}. Message: {websocket_message}")
-
-    # def handle_request_sequence(self, sequence, connection_id="broadcast"):
-    #     self.dispatch_message("self.sequence_handler.get_sequence(sequence)", "sequence", connection_id)
 
     def dispatch_message(self, message_body, subject, connection_id="broadcast"):
         data = {
@@ -108,29 +121,34 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"Failed to send system information: {e}")
     
-    async def start_core_heartbeat(self):
+    async def start_components_heartbeat(self):
         """Start the async heartbeat task"""
         if self._heartbeat_task is None:
-            self._heartbeat_task = asyncio.create_task(self._send_core_heartbeat_loop())
-            logger.info("Core heartbeat monitoring started")
+            self._heartbeat_task = asyncio.create_task(self._send_components_heartbeat_loop())
+            logger.info("Components heartbeat monitoring started")
     
-    async def _send_core_heartbeat_loop(self):
-        """Send heartbeat to core component every 30 seconds"""
+    async def _send_components_heartbeat_loop(self):
+        """Send heartbeats to local components every 30 seconds"""
         while True:
             try:
                 await asyncio.sleep(30)  # Wait 30 seconds between heartbeats
                 
                 if self.messaging_queue_handler and self.messaging_queue_handler.mqueue_sender:
                     await self.messaging_queue_handler.mqueue_sender.send(
-                        self.core_heartbeat_message, 
+                        self.component_heartbeat_message, 
                         "core"
                     )
                     logger.debug("Core heartbeat sent")
+                    await self.messaging_queue_handler.mqueue_sender.send(
+                        self.component_heartbeat_message, 
+                        "scheduler"
+                    )
+                    logger.debug("Scheduler heartbeat sent")
                 else:
                     logger.debug("Messaging queue handler not available for heartbeat")
             except asyncio.CancelledError:
-                logger.info("Core heartbeat monitoring stopped")
+                logger.info("Components heartbeat monitoring stopped")
                 break
             except Exception as e:
-                logger.error(f"Error sending core heartbeat: {e}")
+                logger.error(f"Error sending components heartbeat: {e}")
                 # Continue the loop even if there's an error
