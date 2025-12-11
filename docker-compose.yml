@@ -1,5 +1,5 @@
 version: '3.8'
-services:                                                                                                                                                                                      
+services:
   dunebugger-remote:
     image: ilciclaio/dunebugger-remote:latest
     container_name: dunebugger-remote
@@ -11,10 +11,13 @@ services:
       - PYTHONPATH=/app
     volumes:
       # Mount config directory for easy configuration updates
-      - /etc/dunebugger-remote/config:/app/app/config:ro
+      - /opt/dunebugger-remote/config:/app/app/config:rw
       # Mount host proc and sys for network information
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      # Mount the host’s timezone data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - nats-server
 
@@ -27,10 +30,13 @@ services:
       - PYTHONPATH=/app
     volumes:
       # Mount config directory for easy configuration updates
-      - /etc/dunebugger-scheduler/config:/app/app/config:ro
+      - /opt/dunebugger-scheduler/config:/app/app/config:rw
       # Mount host proc and sys for network information
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      # Mount the host’s timezone data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     depends_on:
       - dunebugger-remote
 
