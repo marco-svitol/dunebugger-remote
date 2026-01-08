@@ -32,7 +32,7 @@ class MessagingQueueHandler:
             elif subject == "heartbeat" and message_json.get("source") == "scheduler":
                 # Handle heartbeat reply from dunebugger scheduler
                 self.websocket_message_handler.system_info_model.set_heartbeat_scheduler_alive()
-            elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "current_schedule", "next_actions", "last_executed_action"]:
+            elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "current_schedule", "next_actions", "last_executed_action", "modes_list"]:
                 self.websocket_message_handler.dispatch_message(message_json["body"], message_json["subject"])
             else:
                 logger.warning(f"Unknown subject: {subject}. Ignoring message.")
