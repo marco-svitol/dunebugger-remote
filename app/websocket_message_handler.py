@@ -63,9 +63,10 @@ class MessageHandler:
                 if subject in ["heartbeat"]: #controller heartbeat
                     self.websocket_client.send_message(self.alive_message)
                     self.handle_heartbeat()
-                elif subject in ["system_info"]: #controller requests system info
-                    system_info_message = self.system_info_model.create_websocket_message()
-                    self.websocket_client.send_message(system_info_message)
+                elif subject in ["system_info"]: 
+                    self.send_system_info()
+                elif subject in ["ntp_status"]:
+                    self.send_ntp_status()
                 else:
                     logger.debug(f"Unknown subject for controller recipient: {subject}. Ignoring message.")
             else:
@@ -115,12 +116,23 @@ class MessageHandler:
     def send_system_info(self):
         """Send system information on startup or on demand"""
         try:
-            system_info_message = self.system_info_model.create_websocket_message()
-            self.websocket_client.send_message(system_info_message)
+            system_info = self.system_info_model.get_system_info()
+            self.dispatch_message(system_info, "system_info")
             logger.info("System information sent successfully")
         except Exception as e:
             logger.error(f"Failed to send system information: {e}")
     
+    def send_ntp_status(self):
+        """Send NTP status on demand"""
+        try:
+            ntp_status = {
+                "ntp_available": bool(self.system_info_model.is_ntp_available())
+            }
+            self.dispatch_message(ntp_status, "ntp_status")
+            logger.info("NTP status sent successfully")
+        except Exception as e:
+            logger.error(f"Failed to send NTP status: {e}")
+
     async def start_components_heartbeat(self):
         """Start the async heartbeat task"""
         if self._heartbeat_task is None:

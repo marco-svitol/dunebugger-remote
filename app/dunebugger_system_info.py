@@ -29,6 +29,9 @@ class SystemInfoModel:
         # Heartbeat scheduler flag with TTL (45 seconds)
         self._heartbeat_scheduler_alive = False
         self._heartbeat_scheduler_timestamp = 0
+        
+        # NTP availability (managed by NTPMonitor)
+        self._ntp_available = False
     
     def set_heartbeat_core_alive(self):
         """Set the heartbeat core flag to alive and update timestamp"""
@@ -67,6 +70,15 @@ class SystemInfoModel:
             return False
         
         return True
+    
+    def set_ntp_available(self, available: bool):
+        """Set the NTP availability status (called by NTPMonitor)"""
+        self._ntp_available = available
+        logger.debug(f"NTP availability set to: {available}")
+    
+    def is_ntp_available(self) -> bool:
+        """Return the current NTP availability status"""
+        return self._ntp_available
         
     def get_system_info(self) -> Dict[str, Any]:
         """
@@ -77,6 +89,7 @@ class SystemInfoModel:
                 "system_info": {
                     "device_id": self.device_id,
                     "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+                    "ntp_available": self._ntp_available,
                     "dunebugger_components": self._get_component_info(),
                     "hardware": self.hardware_helper.get_hardware_info(),
                     "os": self.os_helper.get_os_info(),
@@ -133,15 +146,4 @@ class SystemInfoModel:
                 "status": "error_collecting_info"
             }
         }
-    
-    def create_websocket_message(self) -> Dict[str, Any]:
-        """
-        Create a websocket message with system info
-        """
-        system_info = self.get_system_info()
-        return {
-            "body": system_info,
-            "subject": "system_info",
-            "source": "controller",
-            "destination": "broadcast"
-        }
+

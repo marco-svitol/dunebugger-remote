@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 from dunebugger_settings import settings
-from class_factory import websocket_client, mqueue, websocket_message_handler
+from class_factory import websocket_client, mqueue, websocket_message_handler, ntp_monitor
 from dunebugger_logging import logger
 
 
@@ -12,6 +12,9 @@ async def main():
     
     # Start core heartbeat monitoring
     await websocket_message_handler.start_components_heartbeat()
+    
+    # Start NTP availability monitoring
+    await ntp_monitor.start_monitoring()
 
     try:
         logger.info("Listening for messages. Press Ctrl+C to exit.")
@@ -20,6 +23,7 @@ async def main():
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:
+        await ntp_monitor.stop_monitoring()
         await mqueue.close_listener()
         if settings.websocketEnabled is True:
             await websocket_client.close()

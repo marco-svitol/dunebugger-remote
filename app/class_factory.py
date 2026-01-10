@@ -6,6 +6,7 @@ from websocket_message_handler import MessageHandler
 from mqueue import NATSComm
 from mqueue_handler import MessagingQueueHandler
 from internet_monitor import InternetConnectionMonitor
+from ntp_monitor import NTPMonitor
 
 internet_monitor = InternetConnectionMonitor(test_domain=settings.testDomain, check_interval=settings.connectionIntervalSecs, timeout=settings.connectionTimeoutSecs)
 
@@ -27,9 +28,17 @@ mqueue = NATSComm(
     mqueue_handler=mqueue_handler,
 )
 
+# Initialize NTP monitor with system info model
+ntp_monitor = NTPMonitor(websocket_message_handler.system_info_model)
+
 mqueue_handler.mqueue_sender = mqueue
 websocket_message_handler.websocket_client = websocket_client
 websocket_message_handler.messaging_queue_handler = mqueue_handler
+
+# Wire up NTP monitor dependencies
+ntp_monitor.websocket_message_handler = websocket_message_handler
+ntp_monitor.set_messaging_queue_handler(mqueue_handler)
+mqueue_handler.ntp_monitor = ntp_monitor
 
 # Start internet monitoring if WebSocket is enabled
 if settings.websocketEnabled is True:

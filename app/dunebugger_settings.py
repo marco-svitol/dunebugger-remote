@@ -19,7 +19,7 @@ class DunebuggerSettings:
 
         try:
             self.config.read(dunebugger_config)
-            for section in ["General", "Auth", "Websocket", "MessageQueue", "Log"]:
+            for section in ["General", "Auth", "Websocket", "MessageQueue", "Log", "NTP"]:
                 for option in self.config.options(section):
                     value = self.config.get(section, option)
                     setattr(self, option, self.validate_option(section, option, value))
@@ -58,6 +58,12 @@ class DunebuggerSettings:
                     return get_logging_level_from_name("INFO")
                 else:
                     return logLevel
+            elif section == "NTP":
+                if option in ["ntpServers"]:
+                    # Return list of NTP servers
+                    return [server.strip() for server in value.split(",")]
+                elif option in ["ntpCheckIntervalSecs", "ntpTimeout"]:
+                    return int(value)
 
         except (configparser.NoOptionError, ValueError) as e:
             raise ValueError(f"Invalid configuration: Section={section}, Option={option}, Value={value}. Error: {e}")
