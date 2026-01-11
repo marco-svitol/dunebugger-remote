@@ -40,7 +40,7 @@ class MessagingQueueHandler:
                     logger.debug("NTP status request processed from scheduler")
                 else:
                     logger.warning("NTP monitor not available to handle get_ntp_status request from scheduler")
-            elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "current_schedule", "next_actions", "last_executed_action", "scheduler_status", "modes_list"]:
+            elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "current_schedule", "next_actions", "last_executed_action", "scheduler_status", "modes_list", "analytics_metrics"]:
                 self.websocket_message_handler.dispatch_message(message_json["body"], message_json["subject"])
             else:
                 logger.warning(f"Unknown subject: {subject}. Ignoring message.")
