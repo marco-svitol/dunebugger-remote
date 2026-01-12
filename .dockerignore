@@ -1,5 +1,5 @@
 # Git
-.git
+# .git  # Commented out - needed for version extraction in Dockerfile
 .gitignore
 README.md
 LICENSE
