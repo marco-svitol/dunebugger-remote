@@ -1,3 +1,10 @@
+## [1.0.0-beta.3](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2026-01-12)
+
+
+### Features
+
+* migrate GHCR workflow to new repo structure ([#20](https://github.com/marco-svitol/dunebugger-remote/issues/20)) ([aad1600](https://github.com/marco-svitol/dunebugger-remote/commit/aad160063f77c148cdca3a46173b91135f218631))
+
 ## [1.0.0-beta.2](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-01-12)
 
 
