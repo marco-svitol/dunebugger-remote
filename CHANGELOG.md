@@ -1,3 +1,10 @@
+## [1.0.0-beta.2](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.1...v1.0.0-beta.2) (2026-01-12)
+
+
+### Features
+
+* test github actions ([05fcfa5](https://github.com/marco-svitol/dunebugger-remote/commit/05fcfa5a35a6962e470e83084cfbd3870dae45b9))
+
 ## 1.0.0-beta.1 (2026-01-12)
 
 
