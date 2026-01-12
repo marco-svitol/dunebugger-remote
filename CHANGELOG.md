@@ -1,3 +1,10 @@
+## 1.0.0-beta.1 (2026-01-12)
+
+
+### Features
+
+* test github actions ([#18](https://github.com/marco-svitol/dunebugger-remote/issues/18)) ([ede4568](https://github.com/marco-svitol/dunebugger-remote/commit/ede4568686ac51bb183f32106b3a3f700623e702))
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
