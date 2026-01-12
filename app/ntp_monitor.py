@@ -152,16 +152,13 @@ class NTPMonitor:
         """
         try:
             if self.messaging_queue_handler and self.messaging_queue_handler.mqueue_sender:
-                ntp_status_message = {
-                    "body": {
+                await self.messaging_queue_handler.dispatch_message(
+                    {
                         "ntp_available": ntp_available,
-                        "timestamp": time.time()
                     },
-                    "subject": "ntp_status",
-                    "source": "controller",
-                    "destination": "scheduler"
-                }
-                await self.messaging_queue_handler.mqueue_sender.send(ntp_status_message, "scheduler")
+                    "ntp_status",
+                    "scheduler"
+                )
                 logger.info(f"NTP status update sent to scheduler: ntp_available={ntp_available}")
             else:
                 logger.warning("Cannot send NTP status to scheduler - messaging queue not available")
