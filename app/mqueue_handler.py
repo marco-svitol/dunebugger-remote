@@ -1,5 +1,7 @@
 import json
 from dunebugger_logging import logger
+from dunebugger_settings import settings
+from version import get_version_info
 
 
 class MessagingQueueHandler:
@@ -40,6 +42,10 @@ class MessagingQueueHandler:
                     logger.debug("NTP status request processed from scheduler")
                 else:
                     logger.warning("NTP monitor not available to handle get_ntp_status request from scheduler")
+            elif subject == "get_version":
+                #TODO : make use of reply field more consistently in mqueue handling
+                recipient = mqueue_message.reply if mqueue_message.reply else message_json.get("source")
+                await self.handle_get_version(recipient)
             elif subject in ["gpio_state", "sequence_state", "sequence", "playing_time", "log", "current_schedule", "next_actions", "last_executed_action", "scheduler_status", "modes_list", "analytics_metrics"]:
                 self.websocket_message_handler.dispatch_message(message_json["body"], message_json["subject"])
             else:
@@ -50,3 +56,18 @@ class MessagingQueueHandler:
             logger.error(f"Error processing message: {e}. Message: {message_json}")
 
         return f"Processed message with subject: {subject}"
+
+    async def handle_get_version(self, recipient):
+        """Handle get_version requests by returning version information."""
+        version_info = get_version_info()
+        await self.dispatch_message(version_info, "version_info", recipient)
+        logger.debug(f"Sent version info: {version_info['full_version']}")
+
+    async def dispatch_message(self, message_body, subject, recipient, reply_to=None):
+        message = {
+            "body": message_body,
+            "subject": subject,
+            "source": settings.mQueueClientID,
+        }
+        await self.mqueue_sender.send(message, recipient, reply_to)
+    

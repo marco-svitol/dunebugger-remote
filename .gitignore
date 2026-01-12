@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Auto-generated version file (created during Docker build)
+app/_version_info.py
+
 # Distribution / packaging
 .Python
 build/
