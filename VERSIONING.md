@@ -2,6 +2,7 @@
 
 ## Overview
 
+
 This project uses automated semantic versioning and CI/CD workflows to manage releases and Docker image builds.
 
 ## Versioning System
