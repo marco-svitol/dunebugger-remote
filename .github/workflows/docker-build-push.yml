@@ -1,14 +1,14 @@
 name: Build and Push Docker Image
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Semantic Release"]
+    types:
+      - completed
     branches:
       - main
-    tags:
-      - 'v*'
-  pull_request:
-    branches:
-      - main
+      - develop
+  workflow_dispatch:
 
 env:
   REGISTRY: docker.io
@@ -17,6 +17,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
       packages: write
@@ -24,30 +25,46 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+        fetch-depth: 0
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
     - name: Log in to Docker Hub
-      if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=raw,value=latest,enable={{is_default_branch}}
+    - name: Generate Docker tags
+      id: docker_tags
+      run: |
+        TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+        BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+        COMMIT=$(git rev-parse --short HEAD)
+        
+        # Get version from git tags
+        VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+        
+        if [[ "${BRANCH}" == "main" ]]; then
+          # Main branch: latest and version tags
+          TAGS="${TAGS}:latest,${TAGS}:${VERSION},${TAGS}:${VERSION}-${COMMIT}"
+        elif [[ "${BRANCH}" == "develop" ]]; then
+          # Develop branch: develop tag and version tags
+          TAGS="${TAGS}:develop,${TAGS}:${VERSION},${TAGS}:${VERSION}-${COMMIT}"
+        else
+          # Other branches: branch name tag
+          BRANCH_NAME=$(echo "${BRANCH}" | sed 's/[^a-zA-Z0-9]/-/g')
+          TAGS="${TAGS}:${BRANCH_NAME}"
+        fi
+        
+        echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "commit=${COMMIT}" >> $GITHUB_OUTPUT
+        echo "Docker tags: ${TAGS}"
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -55,11 +72,19 @@ jobs:
         context: .
         file: ./Dockerfile
         platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+        push: true
+        tags: ${{ steps.docker_tags.outputs.tags }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Image digest
-      run: echo ${{ steps.build-push.outputs.digest }}
+    - name: Build summary
+      run: |
+        echo "### Docker Build Complete :rocket:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Version:** ${{ steps.docker_tags.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ steps.docker_tags.outputs.commit }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "${{ steps.docker_tags.outputs.tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
