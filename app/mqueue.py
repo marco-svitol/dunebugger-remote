@@ -1,5 +1,4 @@
 from nats.aio.client import Client as NATS
-import atexit
 import json
 from dunebugger_logging import logger
 
@@ -68,13 +67,13 @@ class NATSComm:
             logger.error(f"Failed to subscribe to messaging queue {self.subject_root}.{self.client_id}.*: {e}")
             raise
 
-    async def send(self, message: dict, recipient, reply_subject=None):
+    async def send(self, message: dict, recipient, reply_to=None):
         try:
             # Convert dictionary to JSON string, then encode to bytes
             subject = message["subject"]
             message_json = json.dumps(message)
-            if reply_subject:
-                await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode(), reply_to=reply_subject)
+            if reply_to:
+                await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode(), reply=reply_to)
             else:
                 await self.nc.publish(f"{self.subject_root}.{recipient}.{subject}", message_json.encode())
             # Too chatty: uncommento only for detailed tracing
