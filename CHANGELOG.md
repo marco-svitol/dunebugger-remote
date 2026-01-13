@@ -1,3 +1,10 @@
+## [1.0.0-beta.4](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-01-13)
+
+
+### Features
+
+* build for arm v8 ([d2fa0c8](https://github.com/marco-svitol/dunebugger-remote/commit/d2fa0c8f2ee4a6ef13946ceb6ad85028d2618d58))
+
 ## [1.0.0-beta.3](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.2...v1.0.0-beta.3) (2026-01-12)
 
 
