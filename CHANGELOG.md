@@ -1,3 +1,10 @@
+## [1.0.0-beta.5](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-01-13)
+
+
+### Features
+
+* handle component versions for frontend ([855dcf6](https://github.com/marco-svitol/dunebugger-remote/commit/855dcf61bf19c8d89295d166843f614c07c3ce71))
+
 ## [1.0.0-beta.4](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.3...v1.0.0-beta.4) (2026-01-13)
 
 
