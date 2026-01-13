@@ -12,7 +12,7 @@ from dunebugger_logging import logger
 from helpers.hardware_info import HardwareInfoHelper
 from helpers.os_info import OSInfoHelper
 from helpers.network_info import NetworkInfoHelper
-
+from version import get_version_info
 
 class SystemInfoModel:
     def __init__(self):
@@ -24,26 +24,30 @@ class SystemInfoModel:
         # Heartbeat core flag with TTL (45 seconds)
         self._heartbeat_core_alive = False
         self._heartbeat_core_timestamp = 0
+        self._core_full_version = ""
         self._heartbeat_ttl = 45  # seconds
         
         # Heartbeat scheduler flag with TTL (45 seconds)
         self._heartbeat_scheduler_alive = False
         self._heartbeat_scheduler_timestamp = 0
+        self._scheduler_full_version = ""
         
         # NTP availability (managed by NTPMonitor)
         self._ntp_available = False
     
-    def set_heartbeat_core_alive(self):
+    def set_heartbeat_core_alive(self, version_info):
         """Set the heartbeat core flag to alive and update timestamp"""
         self._heartbeat_core_alive = True
         self._heartbeat_core_timestamp = time.time()
-        logger.debug("Heartbeat core flag set to alive")
+        self._core_full_version = version_info.get("full_version", "not available")
+        logger.debug(f"Heartbeat core flag set to alive. Version: {self._core_full_version}")
     
-    def set_heartbeat_scheduler_alive(self):
+    def set_heartbeat_scheduler_alive(self, version_info):
         """Set the heartbeat scheduler flag to alive and update timestamp"""
         self._heartbeat_scheduler_alive = True
         self._heartbeat_scheduler_timestamp = time.time()
-        logger.debug("Heartbeat scheduler flag set to alive")
+        self._scheduler_full_version = version_info.get("full_version", "not available")
+        logger.debug(f"Heartbeat scheduler flag set to alive. Version: {self._scheduler_full_version}")
     
     def is_heartbeat_core_alive(self) -> bool:
         """Check if the heartbeat core flag is alive (within TTL)"""
@@ -111,16 +115,22 @@ class SystemInfoModel:
         
         return [
             {
-                "name": "dunebugger",
-                "state": dunebugger_state
+                "name": "Dunebugger",
+                "state": dunebugger_state,
+                "version": self._core_full_version,
+                "last_available_version" : self._core_full_version
             },
             {
-                "name": "scheduler",
-                "state": scheduler_state
+                "name": "Scheduler",
+                "state": scheduler_state,
+                "version": self._scheduler_full_version,
+                "last_available_version" : "1.0.1"
             },
             {
-                "name": "dunebugger-remote",
-                "state": "running"  # Always running since this is the service providing the answer
+                "name": "Remote",
+                "state": "running",  # Always running since this is the service providing the answer
+                "version": get_version_info()['full_version'] ,
+                "last_available_version" : "1.0.3"
             }
         ]
     

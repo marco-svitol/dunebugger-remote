@@ -58,7 +58,7 @@ class MessageHandler:
             if recipient in ["core", "scheduler"]:
                 await self.messaging_queue_handler.mqueue_sender.send(modified_message, recipient)
                 logger.debug(f"Message routed to recipient '{recipient}' with subject '{subject}'")
-            elif recipient in ["controller"]:
+            elif recipient in ["controller","updater"]:
                 # Handle messages without recipients using existing logic
                 if subject in ["heartbeat"]: #controller heartbeat
                     self.websocket_client.send_message(self.alive_message)
@@ -67,6 +67,10 @@ class MessageHandler:
                     self.send_system_info()
                 elif subject in ["ntp_status"]:
                     self.send_ntp_status()
+                elif subject in ["update"]:
+                    logger.debug("Update message received by controller")
+                    # Handle update message here
+                    # For example, you might want to trigger an update process
                 else:
                     logger.debug(f"Unknown subject for controller recipient: {subject}. Ignoring message.")
             else:
