@@ -31,10 +31,10 @@ class MessagingQueueHandler:
 
             if subject == "heartbeat" and message_json.get("source") == "core":
                 # Handle heartbeat reply from dunebugger core
-                self.websocket_message_handler.system_info_model.set_heartbeat_core_alive()
+                self.websocket_message_handler.system_info_model.set_heartbeat_core_alive(message_json.get("body"))
             elif subject == "heartbeat" and message_json.get("source") == "scheduler":
                 # Handle heartbeat reply from dunebugger scheduler
-                self.websocket_message_handler.system_info_model.set_heartbeat_scheduler_alive()
+                self.websocket_message_handler.system_info_model.set_heartbeat_scheduler_alive(message_json.get("body"))
             elif subject == "get_ntp_status" and message_json.get("source") == "scheduler":
                 # Handle NTP status request from scheduler
                 if self.ntp_monitor:
