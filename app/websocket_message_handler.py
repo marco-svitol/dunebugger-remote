@@ -6,11 +6,11 @@ from dunebugger_system_info import SystemInfoModel
 
 
 class MessageHandler:
-    def __init__(self, heartBeatEverySecs, heartBeatLoopDurationSecs):
+    def __init__(self, heart_beat_every_secs, heart_beat_loop_duration_secs):
         self.websocket_client = None
         self.messaging_queue_handler = None
-        self.heartBeatEverySecs = heartBeatEverySecs
-        self.heartBeatLoopDurationSecs = heartBeatLoopDurationSecs
+        self.heart_beat_every_secs = heart_beat_every_secs
+        self.heart_beat_loop_duration_secs = heart_beat_loop_duration_secs
         self.countdown_timer = 0
         self.alive_message = {
             "body": "I am alive",
@@ -95,7 +95,7 @@ class MessageHandler:
         while True:
             self.heartbeat_event.wait()  # Wait until the event is set
             self.websocket_client.send_message(self.alive_message)
-            time.sleep(self.heartBeatEverySecs)
+            time.sleep(self.heart_beat_every_secs)
 
     def _countdown(self):
         while True:
@@ -109,7 +109,7 @@ class MessageHandler:
                 self.countdown_event.clear()  # Stop countdown loop until reactivated
 
     def handle_heartbeat(self):
-        self.countdown_timer = self.heartBeatLoopDurationSecs
+        self.countdown_timer = self.heart_beat_loop_duration_secs
         self.heartbeat_event.set()  # Activate heartbeat loop
         self.countdown_event.set()  # Activate countdown loop
 

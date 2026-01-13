@@ -16,7 +16,7 @@ class WebPubSubListener:
         self.auth_client = auth_client
         self.ws_message_handler = ws_message_handler
         self.group_name = os.getenv("WS_GROUP_NAME")
-        self.broadcastEnabled = settings.broadcastInitialState
+        self.broadcast_enabled = settings.broadcastInitialState
         self.stop_event = threading.Event()
         # Store reference to the main event loop for use in callback methods
         self.main_event_loop = None
@@ -299,10 +299,10 @@ class WebPubSubListener:
         self.ws_message_handler.send_log(message)
 
     def enable_broadcast(self):
-        self.broadcastEnabled = True
+        self.broadcast_enabled = True
 
     def disable_broadcast(self):
-        self.broadcastEnabled = False
+        self.broadcast_enabled = False
 
     def send_message(self, message):
         # Check internet connectivity before attempting to send
@@ -312,7 +312,7 @@ class WebPubSubListener:
             
         if self.client and self.client.is_connected():
             try:
-                if self.broadcastEnabled is True:
+                if self.broadcast_enabled is True:
                     self.client.send_to_group(self.group_name, message, WebPubSubDataType.JSON, no_echo=True)
                     # Too chatty: uncomment only for detailed tracing
                     #if message["subject"] not in ["heartbeat", "gpio_state"] or random.random() <= 1:  # 0.05:
