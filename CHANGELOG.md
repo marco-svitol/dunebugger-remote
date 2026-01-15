@@ -1,3 +1,10 @@
+## [1.0.0-beta.6](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-01-15)
+
+
+### Features
+
+* while implementing updater, need to merge to test core update order requirement. ([5171c0a](https://github.com/marco-svitol/dunebugger-remote/commit/5171c0a35f0c8314e71ad7687a6b76fa4983305d))
+
 ## [1.0.0-beta.5](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.4...v1.0.0-beta.5) (2026-01-13)
 
 
