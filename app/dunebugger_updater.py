@@ -13,65 +13,13 @@ import tarfile
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional, List, Callable, Tuple
+from typing import Dict, Optional, List, Callable
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timedelta
 from packaging import version as pkg_version
 from dunebugger_logging import logger
 from dunebugger_settings import settings
-
-
-def parse_semver(ver_str: str) -> Tuple:
-    """
-    Parse semantic version into comparable tuple.
-    
-    Args:
-        ver_str: Version string like "1.0.0" or "1.0.0-beta.2"
-        
-    Returns:
-        Tuple that can be compared: (base_version_tuple, is_release, prerelease_tuple)
-        
-    Examples:
-        "1.0.0"         -> ((1, 0, 0), 1, None)
-        "1.0.0-beta.3"  -> ((1, 0, 0), 0, ("beta", 3))
-        "2.1.5-alpha.1" -> ((2, 1, 5), 0, ("alpha", 1))
-    
-    Comparison rules:
-        - Release versions > prerelease versions
-        - 1.0.0 > 1.0.0-beta.3
-        - 1.0.0-beta.3 > 1.0.0-beta.2
-    """
-    # Split into base version and prerelease
-    if '-' in ver_str:
-        base, pre = ver_str.split('-', 1)
-    else:
-        base, pre = ver_str, None
-    
-    # Parse base version (e.g., "1.0.0" -> (1, 0, 0))
-    try:
-        base_parts = tuple(int(x) for x in base.split('.'))
-    except ValueError:
-        # Fallback for malformed versions
-        base_parts = (0, 0, 0)
-    
-    # Prerelease versions are "less than" release versions
-    # Examples: beta.2 < beta.3 < release
-    if pre:
-        # Parse prerelease (e.g., "beta.2" -> ("beta", 2))
-        # Remove any .dev or .dirty suffixes for comparison
-        pre_clean = pre.split('.dev')[0].split('.dirty')[0]
-        
-        if '.' in pre_clean:
-            pre_name, pre_num = pre_clean.rsplit('.', 1)
-            try:
-                pre_tuple = (pre_name, int(pre_num))
-            except ValueError:
-                pre_tuple = (pre_clean, 0)
-        else:
-            pre_tuple = (pre_clean, 0)
-        return (base_parts, 0, pre_tuple)  # 0 means prerelease
-    else:
-        return (base_parts, 1, None)  # 1 means release
+from utils import parse_semver
 
 @dataclass
 class ComponentHealth:
@@ -335,7 +283,56 @@ class ComponentUpdater:
             'full_version': tag_version
         }
     
-    async def update_component(self, component_key: str, dry_run: bool = False) -> dict:
+    async def update_components(self) -> Dict[str, dict]:
+        """
+        Update all components that have updates available
+        
+        Returns:
+            Dictionary with component keys and update results
+        """
+        results = {}
+        
+        for component_key, component in self.components.items():
+            version_info = component['version_info']
+            if version_info.update_available:
+                logger.info(f"Updating component: {component_key}")
+                result = await self._update_component(component_key)
+                results[component_key] = result
+            else:
+                logger.info(f"No update available for component: {component_key}")
+                results[component_key] = {"success": False, "message": "No update available"}
+        
+        return results
+    
+    def _verify_update_order_requirement(self, component_key: str) -> dict:
+        """
+        Verify that if there are updates available for multiple components,
+        'core' must always be updated first.
+        
+        Args:
+            component_key: The component being updated
+            
+        Returns:
+            Dictionary with success status, message, and level
+        """
+        # If updating core itself, no check needed
+        if component_key == 'core':
+            return {"success": True, "message": ""}
+        
+        # Check if core has an available update
+        core_version_info = self.components.get('core', {}).get('version_info')
+        if core_version_info and core_version_info.update_available:
+            msg = f"Cannot update {component_key} before core. Core has an available update and must be updated first."
+            logger.warning(msg)
+            return {
+                "success": False, 
+                "message": msg,
+                "level": "error"
+            }
+        
+        return {"success": True, "message": ""}
+
+    async def update_component(self, component_key) -> dict:
         """
         Update a specific component
         
@@ -346,10 +343,19 @@ class ComponentUpdater:
         Returns:
             Dictionary with success status and message
         """
+        results = {}
+
         component = self.components.get(component_key)
+
+        # If the component is not found, return error
         if not component:
-            return {"success": False, "message": f"Unknown component: {component_key}"}
-        
+            return {"success": False, "message": f"Unknown component: {component_key}", "level": "error"}
+
+        # Verify update order requirement: core must be updated first if it has updates available
+        order_check = self._verify_update_order_requirement(component_key)
+        if not order_check["success"]:
+            return order_check
+
         version_info = component['version_info']
         if not version_info.update_available:
             return {"success": False, "message": f"No update available for {component_key}"}
@@ -827,7 +833,6 @@ class ComponentUpdater:
             """Set the heartbeat core flag to alive and update timestamp"""
             self.components[component_key]['health'].running = True
             self.components[component_key]['health'].latest_heartbeat = time.time()
-            logger.info(f"Set {component_key} running status to True")
         else:
             logger.warning(f"Attempted to set running status for unknown component: {component_key}")
 

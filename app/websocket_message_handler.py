@@ -70,12 +70,8 @@ class MessageHandler:
                     self.send_ntp_status()
                 elif subject in ["check_updates"]:
                     await self.handle_check_updates(websocket_message)
-                elif subject in ["perform_update"]:
-                    await self.handle_perform_update(websocket_message)
                 elif subject in ["update"]:
-                    logger.debug("Update message received by controller")
-                    # Handle update message here
-                    # For example, you might want to trigger an update process
+                    await self.handle_perform_update(websocket_message)
                 else:
                     logger.debug(f"Unknown subject for controller recipient: {subject}. Ignoring message.")
             else:
@@ -194,37 +190,31 @@ class MessageHandler:
                 )
                 return
             
-            body = websocket_message.get('body', {})
-            component = body.get('component')
-            dry_run = body.get('dry_run', False)
+            component = websocket_message.get('body', None)
             
             if not component:
-                self.dispatch_message(
-                    {"error": "Component not specified"},
-                    "update_result"
-                )
-                return
+                raise ValueError("No component specified for update")
             
-            logger.info(f"Update requested for component: {component} (dry_run={dry_run})")
+            logger.info(f"Update requested for component: {component})")
             
-            # Perform the update
-            result = await self.component_updater.update_component(component, dry_run)
+            # Perform the update. Result should contain the component's name
+            response = await self.component_updater.update_component(component)
             
-            response = {
-                "component": component,
-                "success": result.get('success', False),
-                "message": result.get('message', ''),
-                "dry_run": dry_run
-            }
+            # response pattern: 
+            # response = {
+            #     "success": True|False,
+            #     "message": result,
+            #     "level": "info"|"error"|"warning",
+            # }
             
-            self.dispatch_message(response, "update_result")
-            logger.info(f"Update result sent: {result}")
+            self.dispatch_message(response, "log")
+            logger.info(f"Update result sent: {response}")
             
         except Exception as e:
             logger.error(f"Failed to handle perform_update: {e}")
             self.dispatch_message(
-                {"component": component, "error": str(e), "success": False},
-                "update_result"
+                message_body={"message": f"Error while updating component {component}: {str(e)}", "success": False, "level": "error"},
+                subject="log"
             )
 
     async def start_components_heartbeat(self):
