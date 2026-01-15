@@ -1,150 +1,87 @@
 """
-Version information for dunebugger-remote.
+Version information
 
-Version is derived from git tags and baked into the container at build time.
-For local development, it falls back to reading from git.
+Version is read from a VERSION file.
+Generate the VERSION file using ./generate_version.sh before running the application.
 The version follows semantic versioning (MAJOR.MINOR.PATCH).
 """
 
-import subprocess
-import re
+import json
+import logging
 from pathlib import Path
+from typing import Dict, Any, Optional
 from dunebugger_settings import settings
 
+logger = logging.getLogger(__name__)
 
-def _load_from_generated_file():
+
+def _load_version_from_file() -> Optional[Dict[str, Any]]:
     """
-    Try to load version from generated _version_info.py file.
-    This file is created during Docker build.
+    Load version information from the VERSION file.
     
-    Returns a tuple of (version, build, commit) or None if file doesn't exist.
+    Returns:
+        Dictionary with version data if successful, None otherwise.
     """
     try:
-        version_file = Path(__file__).parent / "_version_info.py"
-        if version_file.exists():
-            # Read and execute the generated file
-            namespace = {}
-            exec(version_file.read_text(), namespace)
-            return (
-                namespace.get("__version__"),
-                namespace.get("__build__"),
-                namespace.get("__commit__")
-            )
-    except Exception:
-        pass
-    return None
-
-
-def _get_git_version():
-    """
-    Get version information from git tags (for local development).
-    
-    Returns a tuple of (version, build, commit) or None if git is not available.
-    """
-    try:
-        # Get the git repository root (go up from app/ to repo root)
-        repo_root = Path(__file__).parent.parent
-        
-        # Run git describe to get version information
-        result = subprocess.run(
-            ["git", "describe", "--tags", "--always", "--dirty"],
-            cwd=repo_root,
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        
-        if result.returncode != 0:
+        version_file = Path(__file__).parent.parent / "VERSION"
+        if not version_file.exists():
+            logger.warning(f"VERSION file not found at {version_file}")
             return None
             
-        git_describe = result.stdout.strip()
+        content = version_file.read_text().strip()
+        version_data = json.loads(content)
+        logger.debug(f"Successfully loaded version from {version_file}")
+        return version_data
         
-        # Parse the output
-        # Format: v1.0.0-beta.5 or v1.0.0-beta.5-3-g2a4b8c9 or v1.0.0-beta.5-dirty
-        # Pattern: (tag)-(commits_since)-(commit_hash)-(dirty)
-        
-        # Check if dirty
-        is_dirty = git_describe.endswith("-dirty")
-        if is_dirty:
-            git_describe = git_describe[:-6]  # Remove -dirty suffix
-        
-        # Try to parse structured tag format
-        match = re.match(r'^v?(.+?)(?:-(\d+)-g([0-9a-f]+))?$', git_describe)
-        
-        if match:
-            version_tag = match.group(1)
-            commits_since = match.group(2)
-            commit_hash = match.group(3)
-            
-            # Determine version and build type
-            if '-' in version_tag:
-                # Pre-release version like 1.0.0-beta.5
-                version_parts = version_tag.split('-', 1)
-                version = version_parts[0]
-                prerelease = version_parts[1]
-                
-                if commits_since:
-                    # Development version with commits since tag
-                    build = f"{prerelease}.dev{commits_since}"
-                else:
-                    # Exact pre-release tag
-                    build = prerelease
-            else:
-                # Release version like 1.0.0
-                version = version_tag
-                if commits_since:
-                    build = f"dev{commits_since}"
-                else:
-                    build = "release"
-            
-            if is_dirty:
-                build = f"{build}.dirty"
-            
-            # Get short commit hash
-            if commit_hash:
-                commit = commit_hash
-            else:
-                # Get current commit if we're exactly on a tag
-                commit_result = subprocess.run(
-                    ["git", "rev-parse", "--short", "HEAD"],
-                    cwd=repo_root,
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                commit = commit_result.stdout.strip() if commit_result.returncode == 0 else "unknown"
-            
-            return (version, build, commit)
-        
-        # Fallback: use git describe output directly
-        return (git_describe, "unknown", "unknown")
-        
-    except (subprocess.SubprocessError, FileNotFoundError, Exception):
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse VERSION file as JSON: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error reading VERSION file: {e}")
         return None
 
 
-# Try to get version from generated file first (Docker containers)
-_version_info = _load_from_generated_file()
-
-# Fall back to git for local development
-if not _version_info:
-    _version_info = _get_git_version()
-
-if _version_info:
-    __version__, __build__, __commit__ = _version_info
-else:
-    # Final fallback when neither generated file nor git is available
-    __version__ = "0.0.0"
-    __build__ = "unknown"
-    __commit__ = "unknown"
-
-
-def get_version_info():
-    """Return a dictionary with complete version information."""
+def _create_version_info(version_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Create a complete version info dictionary.
+    
+    Args:
+        version_data: Optional dictionary with version data from VERSION file.
+        
+    Returns:
+        Dictionary with all version fields populated.
+    """
+    if version_data is None:
+        version_data = {}
+    
     return {
         "component": settings.mQueueClientID,
-        "version": __version__,
-        "build": __build__,
-        "commit": __commit__,
-        "full_version": f"{__version__}-{__build__}+{__commit__[:7]}" if __commit__ != "unknown" else f"{__version__}-{__build__}"
+        "version": version_data.get("version", "0.0.0"),
+        "prerelease": version_data.get("prerelease"),
+        "build_type": version_data.get("build_type", "unknown"),
+        "build_number": version_data.get("build_number", 0),
+        "commit": version_data.get("commit", "unknown"),
+        "full_version": version_data.get("full_version", "0.0.0-unknown")
     }
+
+
+# Load version information at module initialization
+_version_data = _load_version_from_file()
+_version_info = _create_version_info(_version_data)
+
+
+def get_version_info() -> Dict[str, Any]:
+    """
+    Return a dictionary with complete version information.
+    
+    Returns:
+        Dictionary containing:
+            - component: Component identifier from settings
+            - version: Semantic version (MAJOR.MINOR.PATCH)
+            - prerelease: Pre-release identifier (e.g., 'beta.1') or None
+            - build_type: Type of build (e.g., 'release', 'prerelease')
+            - build_number: Build number
+            - commit: Git commit hash
+            - full_version: Complete version string
+    """
+    return _version_info

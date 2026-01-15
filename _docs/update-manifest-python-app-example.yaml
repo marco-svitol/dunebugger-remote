@@ -1,0 +1,81 @@
+version: "1.2.0"
+component_type: "python_app"
+
+# Minimum version of remote component required to perform this update
+min_remote_version: "1.0.0"
+
+# Pre-update validation checks
+pre_update_checks:
+  - type: "disk_space"
+    minimum_mb: 1000
+    description: "Ensure sufficient disk space"
+  
+  - type: "service_running"
+    service_name: "dunebugger"
+    description: "Verify service is accessible before update"
+
+# Update execution steps
+update_steps:
+  - action: "download_artifact"
+    url: "https://github.com/marco-svitol/dunebugger/releases/download/v1.2.0/dunebugger-1.2.0.tar.gz"
+    checksum: "sha256:abc123..."
+    description: "Download release artifact"
+  
+  - action: "backup_installation"
+    source: "/opt/dunebugger/core"
+    destination: "/opt/dunebugger/backups/core.TIMESTAMP.tar.gz"
+    description: "Backup current installation"
+  
+  - action: "stop_service"
+    service_name: "dunebugger"
+    description: "Stop the service"
+  
+  - action: "extract_artifact"
+    archive: "dunebugger-1.2.0.tar.gz"
+    destination: "/opt/dunebugger/core"
+    description: "Extract new version"
+  
+  - action: "install_requirements"
+    requirements_file: "/opt/dunebugger/core/requirements.txt"
+    description: "Install Python dependencies"
+  
+  - action: "run_migrations"
+    script: "/opt/dunebugger/core/scripts/migrate.sh"
+    optional: true
+    description: "Run database migrations if needed"
+  
+  - action: "start_service"
+    service_name: "dunebugger"
+    description: "Start the service"
+
+# Post-update validation
+post_update_checks:
+  - type: "service_active"
+    service_name: "dunebugger"
+    timeout_seconds: 30
+    description: "Verify service started successfully"
+  
+  - type: "health_endpoint"
+    url: "http://localhost:5000/health"
+    timeout_seconds: 60
+    expected_status: 200
+    description: "Check application health"
+  
+  - type: "version_check"
+    expected_version: "1.2.0"
+    description: "Verify correct version is running"
+
+# Rollback procedure
+rollback_steps:
+  - action: "stop_service"
+    service_name: "dunebugger"
+    description: "Stop current version"
+  
+  - action: "restore_backup"
+    source: "latest_backup"
+    destination: "/opt/dunebugger/core"
+    description: "Restore from backup"
+  
+  - action: "start_service"
+    service_name: "dunebugger"
+    description: "Start previous version"

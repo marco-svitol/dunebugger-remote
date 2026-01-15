@@ -19,7 +19,7 @@ class DunebuggerSettings:
 
         try:
             self.config.read(dunebugger_config)
-            for section in ["General", "Auth", "Websocket", "MessageQueue", "Log", "NTP"]:
+            for section in ["General", "Auth", "Websocket", "MessageQueue", "Log", "NTP", "Updater"]:
                 for option in self.config.options(section):
                     value = self.config.get(section, option)
                     setattr(self, option, self.validate_option(section, option, value))
@@ -64,6 +64,13 @@ class DunebuggerSettings:
                     return [server.strip() for server in value.split(",")]
                 elif option in ["ntpCheckIntervalSecs", "ntpTimeout"]:
                     return int(value)
+            elif section == "Updater":
+                if option in ["updateCheckIntervalHours"]:
+                    return int(value)
+                elif option in ["dockerComposePath", "coreInstallPath", "backupPath", "githubAccount"]:
+                    return str(value)
+                elif option in ["includePrerelease"]:
+                    return self.config.getboolean(section, option)
 
         except (configparser.NoOptionError, ValueError) as e:
             raise ValueError(f"Invalid configuration: Section={section}, Option={option}, Value={value}. Error: {e}")
