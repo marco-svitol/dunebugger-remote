@@ -1,0 +1,562 @@
+```
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                    DUNEBUGGER COMPONENT UPGRADE PROCEDURE                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 1: VERSION DISCOVERY                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌──────────────┐                                    ┌──────────────────┐
+    │  Scheduler   │◄───── Every 24 hours ─────────────┤  ComponentUpdater│
+    │    Timer     │       (Configurable)               │   Periodic Loop  │
+    └──────┬───────┘                                    └────────┬─────────┘
+           │                                                     │
+           │                OR                                   │
+           │                                                     │
+    ┌──────▼───────┐                                            │
+    │  Frontend    │◄──── Manual Request ────────────────────────┘
+    │  WebSocket   │      {"subject": "updater.check_updates"}
+    └──────┬───────┘
+           │
+           │        Both trigger same process
+           │
+           ▼
+    ┌────────────────────────────────────────────────┐
+    │         For Each Component:                     │
+    │         • dunebugger-core                       │
+    │         • dunebugger-scheduler                  │
+    │         • dunebugger-remote                     │
+    └────────────────┬───────────────────────────────┘
+                     │
+                     ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │  GitHub API Call:                                        │
+    │  GET https://api.github.com/repos/marco-svitol/         │
+    │      {repo}/releases/latest                             │
+    │                                                          │
+    │  Response:                                               │
+    │  {                                                       │
+    │    "tag_name": "v1.2.0",                                │
+    │    "html_url": "https://...",                           │
+    │    "body": "Release notes...",                          │
+    │    "assets": [...]                                       │
+    │  }                                                       │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │  Version Comparison (Semantic Versioning):               │
+    │                                                          │
+    │  Current: 1.0.0    ┌─────────────────┐   Update         │
+    │  Latest:  1.2.0 ──►│ 1.2.0 > 1.0.0?  │──► Available     │
+    │                    └─────────────────┘                   │
+    │                                                          │
+    │  Using: packaging.version.parse()                       │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │  Store Results:                                          │
+    │  • Latest version found                                  │
+    │  • Release notes                                         │
+    │  • Update available flag                                 │
+    │  • Timestamp of check                                    │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │  Send to Frontend (WebSocket):                           │
+    │                                                          │
+    │  {                                                       │
+    │    "subject": "update_check_result",                    │
+    │    "body": {                                             │
+    │      "components": {                                     │
+    │        "core": {                                         │
+    │          "current": "1.0.0",                            │
+    │          "latest": "1.2.0",                             │
+    │          "update_available": true,                      │
+    │          "release_notes": "..."                         │
+    │        },                                                │
+    │        ...                                               │
+    │      }                                                   │
+    │    }                                                     │
+    │  }                                                       │
+    └─────────────────────────────────────────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 2: USER DECISION                                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────┐
+    │  Frontend displays update availability:                  │
+    │                                                          │
+    │  ┌────────────────────────────────────────┐            │
+    │  │ Scheduler v1.0.0 → v1.2.0 available   │            │
+    │  │ [View Release Notes] [Update Now]      │            │
+    │  └────────────────────────────────────────┘            │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     │  User clicks "Update Now"
+                     │
+                     ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │  Frontend sends WebSocket message:                       │
+    │                                                          │
+    │  {                                                       │
+    │    "subject": "updater.perform_update",                 │
+    │    "body": {                                             │
+    │      "component": "scheduler",                          │
+    │      "dry_run": false                                   │
+    │    }                                                     │
+    │  }                                                       │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+                 [PHASE 3]
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 3: PRE-UPDATE VALIDATION                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────┐
+    │  Fetch Update Manifest (Optional):                       │
+    │                                                          │
+    │  Try: https://raw.githubusercontent.com/                │
+    │       marco-svitol/{repo}/v{version}/                   │
+    │       update-manifest.yaml                              │
+    │                                                          │
+    │  If found: Parse manifest                               │
+    │  If not found: Use built-in procedures                  │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │  Check: Minimum Remote Version Required                  │
+    │                                                          │
+    │  If manifest.min_remote_version:                        │
+    │    remote_version >= min_remote_version?                │
+    │    NO  ──► ABORT: "Remote too old"                      │
+    │    YES ──► Continue                                      │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+    ┌─────────────────────────────────────────────────────────┐
+    │  Pre-Update Checks:                                      │
+    │                                                          │
+    │  ┌────────────────────────────────────────────┐        │
+    │  │ 1. Disk Space Check                        │        │
+    │  │    Required: 500 MB (container)            │        │
+    │  │             1000 MB (python app)           │        │
+    │  │    Available: df -h /                      │        │
+    │  │    Result: ✓ 15 GB available               │        │
+    │  └────────────────────────────────────────────┘        │
+    │                                                          │
+    │  ┌────────────────────────────────────────────┐        │
+    │  │ 2. Service Status Check                    │        │
+    │  │    systemctl is-active {service}           │        │
+    │  │    docker ps | grep {container}            │        │
+    │  │    Result: ✓ Running                       │        │
+    │  └────────────────────────────────────────────┘        │
+    │                                                          │
+    │  ┌────────────────────────────────────────────┐        │
+    │  │ 3. Permissions Check                       │        │
+    │  │    Can write to installation directory?    │        │
+    │  │    Can execute docker/systemctl commands?  │        │
+    │  │    Result: ✓ Sufficient permissions        │        │
+    │  └────────────────────────────────────────────┘        │
+    │                                                          │
+    │  All checks passed? YES ──► Continue                    │
+    │                     NO  ──► ABORT with error            │
+    └────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+                 [PHASE 4A or 4B]
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 4A: UPDATE CONTAINERIZED COMPONENT (Scheduler/Remote)                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Step 1: Backup Current Configuration
+    ┌──────────────────────────────────────────────────────┐
+    │  cp /opt/dunebugger/docker-compose.yml \            │
+    │     /opt/dunebugger/backups/                        │
+    │     docker-compose.20260113_143022.yml              │
+    │                                                      │
+    │  ✓ Backup created                                   │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 2: Modify Docker Compose File
+    ┌──────────────────────────────────────────────────────┐
+    │  Read: /opt/dunebugger/docker-compose.yml           │
+    │                                                      │
+    │  BEFORE:                                            │
+    │  services:                                           │
+    │    scheduler:                                        │
+    │      image: ghcr.io/.../scheduler:1.0.0            │
+    │                                                      │
+    │  AFTER:                                             │
+    │  services:                                           │
+    │    scheduler:                                        │
+    │      image: ghcr.io/.../scheduler:1.2.0            │
+    │                                                      │
+    │  Write: /opt/dunebugger/docker-compose.yml          │
+    │  ✓ File updated                                     │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 3: Pull New Container Image
+    ┌──────────────────────────────────────────────────────┐
+    │  Execute:                                            │
+    │  docker-compose -f docker-compose.yml \             │
+    │                 pull scheduler                       │
+    │                                                      │
+    │  Output:                                             │
+    │  Pulling scheduler ... done                          │
+    │  Digest: sha256:abc123...                           │
+    │  Status: Downloaded newer image                      │
+    │                                                      │
+    │  ✓ Image pulled successfully                        │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 4: Recreate and Restart Container
+    ┌──────────────────────────────────────────────────────┐
+    │  Execute:                                            │
+    │  docker-compose -f docker-compose.yml \             │
+    │                 up -d scheduler                      │
+    │                                                      │
+    │  Output:                                             │
+    │  Recreating scheduler_container ... done            │
+    │                                                      │
+    │  ✓ Container started                                │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+           [PHASE 5]
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 4B: UPDATE PYTHON APPLICATION (Core)                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Step 1: Download Release Artifact
+    ┌──────────────────────────────────────────────────────┐
+    │  Find tar.gz asset in release                        │
+    │  URL: https://github.com/marco-svitol/dunebugger/   │
+    │       releases/download/v1.2.0/                     │
+    │       dunebugger-1.2.0.tar.gz                       │
+    │                                                      │
+    │  Download to: /tmp/dunebugger_update/               │
+    │                                                      │
+    │  ✓ Downloaded 45 MB                                 │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 2: Backup Current Installation
+    ┌──────────────────────────────────────────────────────┐
+    │  Execute:                                            │
+    │  tar -czf /opt/dunebugger/backups/                  │
+    │           core.20260113_143022.tar.gz \             │
+    │           -C /opt/dunebugger/core/ .                │
+    │                                                      │
+    │  ✓ Backup created (38 MB)                           │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 3: Stop Service
+    ┌──────────────────────────────────────────────────────┐
+    │  Execute:                                            │
+    │  systemctl stop dunebugger                          │
+    │                                                      │
+    │  Waiting for clean shutdown...                       │
+    │                                                      │
+    │  ✓ Service stopped                                  │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 4: Extract New Version
+    ┌──────────────────────────────────────────────────────┐
+    │  Remove old:                                         │
+    │  rm -rf /opt/dunebugger/core/*                      │
+    │                                                      │
+    │  Extract new:                                        │
+    │  tar -xzf /tmp/dunebugger_update/                   │
+    │           dunebugger-1.2.0.tar.gz \                 │
+    │           -C /opt/dunebugger/core/                  │
+    │                                                      │
+    │  ✓ Files extracted                                  │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 5: Install Dependencies
+    ┌──────────────────────────────────────────────────────┐
+    │  Execute:                                            │
+    │  pip3 install -r \                                  │
+    │       /opt/dunebugger/core/requirements.txt         │
+    │                                                      │
+    │  Output:                                             │
+    │  Installing collected packages...                    │
+    │  Successfully installed package1-1.0 package2-2.0   │
+    │                                                      │
+    │  ✓ Dependencies installed                           │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Step 6: Start Service
+    ┌──────────────────────────────────────────────────────┐
+    │  Execute:                                            │
+    │  systemctl start dunebugger                         │
+    │                                                      │
+    │  Service starting...                                 │
+    │                                                      │
+    │  ✓ Service started                                  │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+           [PHASE 5]
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 5: POST-UPDATE VALIDATION                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Wait 5-10 seconds for service startup
+    ┌──────────────────────────────────────────────────────┐
+    │  sleep 10                                            │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Check 1: Service/Container Running
+    ┌──────────────────────────────────────────────────────┐
+    │  Container:                                          │
+    │    docker ps --filter name=scheduler                 │
+    │    Result: CONTAINER ID ... scheduler ... Up 10s     │
+    │    ✓ Container is running                           │
+    │                                                      │
+    │  Python App:                                         │
+    │    systemctl is-active dunebugger                   │
+    │    Result: active                                    │
+    │    ✓ Service is active                              │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    Check 2: Health Endpoint
+    ┌──────────────────────────────────────────────────────┐
+    │  HTTP GET: http://localhost:8080/health             │
+    │            (or appropriate port)                     │
+    │                                                      │
+    │  Timeout: 60 seconds                                 │
+    │                                                      │
+    │  Response:                                           │
+    │  Status: 200 OK                                      │
+    │  Body: {                                             │
+    │    "status": "healthy",                             │
+    │    "version": "1.2.0",                              │
+    │    "uptime": 10                                     │
+    │  }                                                   │
+    │                                                      │
+    │  ✓ Health check passed                              │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ├──── All Checks Passed ────► [PHASE 6: SUCCESS]
+               │
+               └──── Any Check Failed ─────► [PHASE 7: ROLLBACK]
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 6: UPDATE SUCCESS                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌──────────────────────────────────────────────────────┐
+    │  Update version in memory:                           │
+    │  component.current_version = "1.2.0"                │
+    │  component.update_available = False                 │
+    │                                                      │
+    │  ✓ Version updated                                  │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  Cleanup temporary files:                            │
+    │  rm -rf /tmp/dunebugger_update/                     │
+    │                                                      │
+    │  ✓ Cleanup complete                                 │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  Send success to frontend (WebSocket):               │
+    │                                                      │
+    │  {                                                   │
+    │    "subject": "update_result",                      │
+    │    "body": {                                         │
+    │      "component": "scheduler",                      │
+    │      "success": true,                               │
+    │      "message": "Updated scheduler to 1.2.0"        │
+    │    }                                                 │
+    │  }                                                   │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ╔══════════════════════════════════════════════════════╗
+    ║           UPDATE COMPLETED SUCCESSFULLY              ║
+    ╚══════════════════════════════════════════════════════╝
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE 7: ROLLBACK (Only if post-update checks fail)                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌──────────────────────────────────────────────────────┐
+    │  ⚠️  POST-UPDATE CHECK FAILED                        │
+    │                                                      │
+    │  Initiating automatic rollback...                    │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    For Containerized Component:
+    ┌──────────────────────────────────────────────────────┐
+    │  Restore docker-compose.yml:                         │
+    │  cp /opt/dunebugger/backups/                        │
+    │     docker-compose.20260113_143022.yml \            │
+    │     /opt/dunebugger/docker-compose.yml              │
+    │                                                      │
+    │  ✓ Compose file restored                            │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  Recreate container with old version:                │
+    │  docker-compose -f docker-compose.yml \             │
+    │                 up -d scheduler                      │
+    │                                                      │
+    │  ✓ Container rolled back to v1.0.0                  │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    For Python Application:
+    ┌──────────────────────────────────────────────────────┐
+    │  Stop service:                                       │
+    │  systemctl stop dunebugger                          │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  Remove failed installation:                         │
+    │  rm -rf /opt/dunebugger/core/*                      │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  Restore from backup:                                │
+    │  tar -xzf /opt/dunebugger/backups/                  │
+    │           core.20260113_143022.tar.gz \             │
+    │           -C /opt/dunebugger/                       │
+    │                                                      │
+    │  ✓ Files restored                                   │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  Start service:                                      │
+    │  systemctl start dunebugger                         │
+    │                                                      │
+    │  ✓ Service started with v1.0.0                      │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ┌──────────────────────────────────────────────────────┐
+    │  Send rollback notification (WebSocket):             │
+    │                                                      │
+    │  {                                                   │
+    │    "subject": "update_result",                      │
+    │    "body": {                                         │
+    │      "component": "scheduler",                      │
+    │      "success": false,                              │
+    │      "message": "Post-update checks failed, "       │
+    │                 "rolled back to v1.0.0"             │
+    │    }                                                 │
+    │  }                                                   │
+    └──────────┬───────────────────────────────────────────┘
+               │
+               ▼
+    ╔══════════════════════════════════════════════════════╗
+    ║        UPDATE FAILED - ROLLED BACK TO v1.0.0        ║
+    ╚══════════════════════════════════════════════════════╝
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ COMPONENT STATES DURING UPDATE                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Time →   0min    1min    2min    3min    4min    5min
+         │       │       │       │       │       │
+Core     ████████░░░░░░░░░░░░░░░░████████████████  Running
+         Running │ Stopped      │ Restarting  │ Running v1.2
+                 │ for update   │             │
+                 └──────────────┘             │
+                                              │
+Scheduler████████████████░░░░░░░░████████████████  Running
+         Running         │ Recreate  │ Running v1.2
+                         │ Container │
+                         └───────────┘
+
+Remote   ████████████████████████████████████████  Running
+         Always running (manages updates)
+
+         Legend:
+         ████ = Running
+         ░░░░ = Stopped/Updating
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ BACKUP STRUCTURE                                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+/opt/dunebugger/backups/
+│
+├── core.20260113_101500.tar.gz         ← Backup from today 10:15
+├── core.20260113_143022.tar.gz         ← Most recent (kept for rollback)
+├── core.20260112_153000.tar.gz         ← Yesterday's backup
+│
+├── docker-compose.20260113_101500.yml  ← Backup from today 10:15
+├── docker-compose.20260113_143022.yml  ← Most recent (kept for rollback)
+└── docker-compose.20260112_153000.yml  ← Yesterday's backup
+
+NOTE: No automatic cleanup - manual housekeeping required
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ KEY DECISION POINTS                                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+1. Update Manifest Found?
+   YES → Use manifest for pre/post checks
+   NO  → Use built-in default procedures
+
+2. Pre-Update Checks Pass?
+   YES → Proceed with update
+   NO  → ABORT (no changes made)
+
+3. Component Type?
+   Container   → Modify docker-compose + restart
+   Python App  → Download + extract + service restart
+
+4. Post-Update Checks Pass?
+   YES → Mark as successful, cleanup
+   NO  → ROLLBACK to previous version
+
+5. Rollback Successful?
+   YES → Report rollback to user
+   NO  → Manual intervention required
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                          END OF UPGRADE PROCEDURE                          ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+```

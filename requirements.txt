@@ -3,3 +3,6 @@ load_dotenv
 azure.messaging.webpubsubclient
 nats-py
 psutil
+aiohttp
+PyYAML
+packaging

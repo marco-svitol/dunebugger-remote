@@ -1,0 +1,55 @@
+version: "1.1.0"
+component_type: "container"
+
+# Minimum version of remote component required to perform this update
+min_remote_version: "1.0.0"
+
+# Pre-update validation checks
+pre_update_checks:
+  - type: "disk_space"
+    minimum_mb: 500
+    description: "Ensure sufficient disk space for new image"
+  
+  - type: "backup_exists"
+    max_age_hours: 24
+    description: "Verify recent backup exists"
+
+# Update execution steps (informational - actual steps are in updater)
+update_steps:
+  - action: "backup_compose"
+    description: "Backup current docker-compose.yaml"
+  
+  - action: "update_compose"
+    service: "scheduler"
+    image_tag: "1.1.0"
+    description: "Update image tag in docker-compose"
+  
+  - action: "pull_image"
+    image: "ghcr.io/marco-svitol/dunebugger-scheduler:1.1.0"
+    description: "Pull new container image"
+  
+  - action: "restart_service"
+    service: "scheduler"
+    timeout_seconds: 30
+    description: "Restart the service"
+
+# Post-update validation
+post_update_checks:
+  - type: "container_running"
+    container_name: "scheduler"
+    description: "Verify container is running"
+  
+  - type: "health_endpoint"
+    url: "http://localhost:8080/health"
+    timeout_seconds: 60
+    expected_status: 200
+    description: "Check health endpoint responds"
+
+# Rollback procedure if update fails
+rollback_steps:
+  - action: "restore_compose"
+    description: "Restore docker-compose from backup"
+  
+  - action: "restart_service"
+    service: "scheduler"
+    description: "Restart with old version"

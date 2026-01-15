@@ -9,6 +9,7 @@ class MessageHandler:
     def __init__(self, heart_beat_every_secs, heart_beat_loop_duration_secs):
         self.websocket_client = None
         self.messaging_queue_handler = None
+        self.component_updater = None  # Will be set by class_factory
         self.heart_beat_every_secs = heart_beat_every_secs
         self.heart_beat_loop_duration_secs = heart_beat_loop_duration_secs
         self.countdown_timer = 0
@@ -67,6 +68,10 @@ class MessageHandler:
                     self.send_system_info()
                 elif subject in ["ntp_status"]:
                     self.send_ntp_status()
+                elif subject in ["check_updates"]:
+                    await self.handle_check_updates(websocket_message)
+                elif subject in ["perform_update"]:
+                    await self.handle_perform_update(websocket_message)
                 elif subject in ["update"]:
                     logger.debug("Update message received by controller")
                     # Handle update message here
@@ -136,6 +141,91 @@ class MessageHandler:
             logger.info("NTP status sent successfully")
         except Exception as e:
             logger.error(f"Failed to send NTP status: {e}")
+    
+    async def handle_check_updates(self, websocket_message):
+        """Handle check_updates request from WebSocket"""
+        try:
+            if not self.component_updater:
+                logger.error("Component updater not initialized")
+                self.dispatch_message(
+                    {"error": "Component updater not available"},
+                    "update_check_result"
+                )
+                return
+            
+            # Force check for updates
+            force = websocket_message.get('body', {}).get('force', True)
+            logger.info(f"Manual update check requested (force={force})")
+            
+            results = await self.component_updater.check_updates(force=force)
+            
+            # Format response
+            response = {
+                "components": {
+                    key: {
+                        "current": comp.current_version,
+                        "latest": comp.latest_version,
+                        "update_available": comp.update_available,
+                        "release_notes": comp.release_notes,
+                        "last_checked": comp.last_checked.isoformat() if comp.last_checked else None
+                    }
+                    for key, comp in results.items()
+                }
+            }
+            
+            self.dispatch_message(response, "update_check_result")
+            logger.info("Update check completed and sent")
+            
+        except Exception as e:
+            logger.error(f"Failed to handle check_updates: {e}")
+            self.dispatch_message(
+                {"error": str(e)},
+                "update_check_result"
+            )
+    
+    async def handle_perform_update(self, websocket_message):
+        """Handle perform_update request from WebSocket"""
+        try:
+            if not self.component_updater:
+                logger.error("Component updater not initialized")
+                self.dispatch_message(
+                    {"error": "Component updater not available"},
+                    "update_result"
+                )
+                return
+            
+            body = websocket_message.get('body', {})
+            component = body.get('component')
+            dry_run = body.get('dry_run', False)
+            
+            if not component:
+                self.dispatch_message(
+                    {"error": "Component not specified"},
+                    "update_result"
+                )
+                return
+            
+            logger.info(f"Update requested for component: {component} (dry_run={dry_run})")
+            
+            # Perform the update
+            result = await self.component_updater.update_component(component, dry_run)
+            
+            response = {
+                "component": component,
+                "success": result.get('success', False),
+                "message": result.get('message', ''),
+                "dry_run": dry_run
+            }
+            
+            self.dispatch_message(response, "update_result")
+            logger.info(f"Update result sent: {result}")
+            
+        except Exception as e:
+            logger.error(f"Failed to handle perform_update: {e}")
+            self.dispatch_message(
+                {"component": component, "error": str(e), "success": False},
+                "update_result"
+            )
 
     async def start_components_heartbeat(self):
         """Start the async heartbeat task"""

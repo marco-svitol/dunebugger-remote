@@ -2,10 +2,10 @@
 import asyncio
 # print component version info on startup
 from version import get_version_info
-print(f"Dunebugger Remote version: {get_version_info()['full_version']}")
+print(f"Dunebugger core version: {get_version_info()['full_version']}, build type: {get_version_info()['build_type']}, build number: {get_version_info()['build_number']}")
 
 from dunebugger_settings import settings
-from class_factory import websocket_client, mqueue, websocket_message_handler, ntp_monitor
+from class_factory import websocket_client, mqueue, websocket_message_handler, ntp_monitor, component_updater
 from dunebugger_logging import logger
 
 
@@ -19,6 +19,9 @@ async def main():
     
     # Start NTP availability monitoring
     await ntp_monitor.start_monitoring()
+    
+    # Start periodic update checking
+    await component_updater.start_periodic_check()
 
     try:
         logger.info("Listening for messages. Press Ctrl+C to exit.")
@@ -27,6 +30,7 @@ async def main():
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:
+        await component_updater.stop_periodic_check()
         await ntp_monitor.stop_monitoring()
         await mqueue.close_listener()
         if settings.websocketEnabled is True:

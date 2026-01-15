@@ -7,8 +7,12 @@ from mqueue import NATSComm
 from mqueue_handler import MessagingQueueHandler
 from internet_monitor import InternetConnectionMonitor
 from ntp_monitor import NTPMonitor
+from dunebugger_updater import ComponentUpdater
 
 internet_monitor = InternetConnectionMonitor(test_domain=settings.testDomain, check_interval=settings.connectionIntervalSecs, timeout=settings.connectionTimeoutSecs)
+
+# Initialize component updater
+component_updater = ComponentUpdater()
 
 auth_client = AuthClient(
     client_id=os.getenv("AUTH0_CLIENT_ID"),
@@ -32,6 +36,7 @@ mqueue = NATSComm(
 ntp_monitor = NTPMonitor(websocket_message_handler.system_info_model)
 
 mqueue_handler.mqueue_sender = mqueue
+mqueue_handler.component_updater = component_updater
 websocket_message_handler.websocket_client = websocket_client
 websocket_message_handler.messaging_queue_handler = mqueue_handler
 
@@ -39,6 +44,10 @@ websocket_message_handler.messaging_queue_handler = mqueue_handler
 ntp_monitor.websocket_message_handler = websocket_message_handler
 ntp_monitor.set_messaging_queue_handler(mqueue_handler)
 mqueue_handler.ntp_monitor = ntp_monitor
+
+# Wire up component updater
+websocket_message_handler.component_updater = component_updater
+websocket_message_handler.system_info_model.component_updater = component_updater
 
 # Start internet monitoring if WebSocket is enabled
 if settings.websocketEnabled is True:

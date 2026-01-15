@@ -10,14 +10,10 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  actions: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    outputs:
-      released: ${{ steps.release_info.outputs.released }}
-      version: ${{ steps.release_info.outputs.version }}
     
     steps:
       - name: Checkout code
@@ -103,43 +99,88 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
+      - name: Generate VERSION file and create release artifact
+        if: success()
+        run: |
+          # Check if a release was created
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LATEST_TAG" ]; then
+            echo "Release detected: ${LATEST_TAG}"
+            
+            # Generate VERSION file
+            ./generate_version.sh
+            
+            # Create artifact
+            VERSION=${LATEST_TAG#v}
+            ARTIFACT_NAME="dunebugger-${VERSION}.tar.gz"
+            
+            tar czf "${ARTIFACT_NAME}" \
+              --exclude='.git' \
+              --exclude='.github' \
+              --exclude='__pycache__' \
+              --exclude='*.pyc' \
+              --exclude='.venv' \
+              --exclude='*.log' \
+              --exclude='.gitignore' \
+              --exclude='.pre-commit-config.yaml' \
+              app/ \
+              requirements.txt \
+              VERSION \
+              CHANGELOG.md \
+              ReadMe.md
+            
+            # Generate SHA256 checksum
+            sha256sum "${ARTIFACT_NAME}" > "${ARTIFACT_NAME}.sha256"
+            
+            # Copy VERSION file for standalone download
+            cp VERSION "VERSION.json"
+            
+            echo "ARTIFACT_PATH=${ARTIFACT_NAME}" >> $GITHUB_ENV
+            echo "CHECKSUM_PATH=${ARTIFACT_NAME}.sha256" >> $GITHUB_ENV
+            echo "VERSION_PATH=VERSION.json" >> $GITHUB_ENV
+            echo "RELEASE_TAG=${LATEST_TAG}" >> $GITHUB_ENV
+          fi
+
+      - name: Upload artifact to GitHub Release
+        if: env.ARTIFACT_PATH != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            ${{ env.ARTIFACT_PATH }}
+            ${{ env.CHECKSUM_PATH }}
+            ${{ env.VERSION_PATH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Output release info
         id: release_info
         run: |
           # Check if a new tag was created
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -n "$LATEST_TAG" ]; then
-            VERSION=${LATEST_TAG#v}  # Remove 'v' prefix if present
+            VERSION=${LATEST_TAG#v}
             echo "Released version: ${VERSION}"
-            echo "version=${VERSION}" >> $GITHUB_OUTPUT
-            echo "released=true" >> $GITHUB_OUTPUT
-            
-            # Add summary
             echo "### Release Created :rocket:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Version:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
             echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Docker image will be built and pushed by the docker-build-push workflow" >> $GITHUB_STEP_SUMMARY
+            echo "**Artifacts Published:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "dunebugger-${VERSION}.tar.gz" >> $GITHUB_STEP_SUMMARY
+            echo "dunebugger-${VERSION}.tar.gz.sha256" >> $GITHUB_STEP_SUMMARY
+            echo "VERSION.json" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Updater Integration:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Artifacts available via GitHub Releases API" >> $GITHUB_STEP_SUMMARY
+            echo "- VERSION.json contains full version metadata with build number" >> $GITHUB_STEP_SUMMARY
+            echo "- SHA256 checksum for verification" >> $GITHUB_STEP_SUMMARY
+            echo "- Ready for artifact-based deployment" >> $GITHUB_STEP_SUMMARY
           else
             echo "No release created"
-            echo "released=false" >> $GITHUB_OUTPUT
+            echo "### No Release Created" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No commits found that trigger a release." >> $GITHUB_STEP_SUMMARY
           fi
-
-  trigger-docker-build:
-    needs: release
-    if: needs.release.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Trigger Docker Build
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'docker-build-push.yml',
-              ref: context.ref
-            })
-            console.log('Docker build workflow triggered')
