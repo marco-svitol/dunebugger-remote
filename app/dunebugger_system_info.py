@@ -42,7 +42,7 @@ class SystemInfoModel:
                     "device_id": self.device_id,
                     "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
                     "ntp_available": self._ntp_available,
-                    "dunebugger_components": self.component_updater.get_component_info(),
+                    "dunebugger_components": self.component_updater.get_components_info(),
                     "hardware": self.hardware_helper.get_hardware_info(),
                     "os": self.os_helper.get_os_info(),
                     "network": self.network_helper.get_network_info(),

@@ -79,7 +79,7 @@ class ComponentHealth:
     name: str
     running: bool = False
     latest_heartbeat: Optional[datetime] = None
-    heartbeat_ttl = 45  # seconds
+    heartbeat_ttl: int = 45  # seconds
 
 @dataclass
 class ComponentVersion:
@@ -167,7 +167,8 @@ class ComponentUpdater:
 
         self.components['core']['health'] = ComponentHealth(name='dunebugger-core')
         self.components['scheduler']['health'] = ComponentHealth(name='dunebugger-scheduler')
-        self.components['remote']['health'] = ComponentHealth(name='dunebugger-remote')
+        self.components['remote']['health'] = ComponentHealth(name='dunebugger-remote', running=True, latest_heartbeat=time.time(), heartbeat_ttl=315576000)
+
         
         logger.info(f"Initialized component versions - Core: {self.components['core']['version_info'].current_version}, "
                    f"Scheduler: {self.components['scheduler']['version_info'].current_version}, "
@@ -969,7 +970,7 @@ class ComponentUpdater:
         """Get version information for all components"""
         return {key: comp['version_info'].to_dict() for key, comp in self.components.items()}
     
-    def get_component_info(self) -> List[dict]:
+    def get_components_info(self) -> List[dict]:
         """
         Get component information in the format expected by system_info
         """
