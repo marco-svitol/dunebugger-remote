@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "prerelease": "beta.5",
   "build_type": "prerelease",
-  "build_number": 49,
-  "commit": "be77d9a",
+  "build_number": 51,
+  "commit": "872b692",
   "full_version": "1.0.0-beta.5.dirty"
 }

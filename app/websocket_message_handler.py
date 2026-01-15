@@ -192,6 +192,10 @@ class MessageHandler:
             
             component = websocket_message.get('body', None)
             
+            # Remove prefix "dunebugger-" if present
+            if component and component.startswith("dunebugger-"):
+                component = component[len("dunebugger-"):]
+
             if not component:
                 raise ValueError("No component specified for update")
             

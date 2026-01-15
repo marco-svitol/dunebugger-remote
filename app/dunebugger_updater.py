@@ -307,7 +307,7 @@ class ComponentUpdater:
     def _verify_update_order_requirement(self, component_key: str) -> dict:
         """
         Verify that if there are updates available for multiple components,
-        'core' must always be updated first.
+        'remote' must always be updated first.
         
         Args:
             component_key: The component being updated
@@ -315,14 +315,14 @@ class ComponentUpdater:
         Returns:
             Dictionary with success status, message, and level
         """
-        # If updating core itself, no check needed
-        if component_key == 'core':
+        # If updating remote itself, no check needed
+        if component_key == 'remote':
             return {"success": True, "message": ""}
         
-        # Check if core has an available update
-        core_version_info = self.components.get('core', {}).get('version_info')
-        if core_version_info and core_version_info.update_available:
-            msg = f"Cannot update {component_key} before core. Core has an available update and must be updated first."
+        # Check if remote has an available update
+        remote_version_info = self.components.get('remote', {}).get('version_info')
+        if remote_version_info and remote_version_info.update_available:
+            msg = f"Cannot update {component_key} before remote. Remote has an available update and must be updated first."
             logger.warning(msg)
             return {
                 "success": False, 
@@ -360,8 +360,7 @@ class ComponentUpdater:
         if not version_info.update_available:
             return {"success": False, "message": f"No update available for {component_key}"}
         
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Updating {component_key} "
-                   f"from {version_info.current_version} to {version_info.latest_version}")
+        logger.info(f"Updating {component_key} from {version_info.current_version} to {version_info.latest_version}")
         
         try:
             # Fetch update manifest
