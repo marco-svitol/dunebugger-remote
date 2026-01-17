@@ -1,3 +1,14 @@
+## [1.0.0-beta.7](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-01-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* implement remote update functionality. Not finished yet.
+
+### Features
+
+* implement remote update functionality. Not finished yet. ([8bd9082](https://github.com/marco-svitol/dunebugger-remote/commit/8bd9082681d0547470b85bcba363ec3db8776127))
+
 ## [1.0.0-beta.6](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-01-15)
 
 
