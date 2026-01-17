@@ -46,7 +46,6 @@ jobs:
           cat > .releaserc.json << 'EOF'
           {
             "branches": [
-              "+([0-9])?(.{+([0-9]),x}).x",
               "main",
               {
                 "name": "develop",
@@ -54,51 +53,10 @@ jobs:
               }
             ],
             "plugins": [
-              [
-                "@semantic-release/commit-analyzer",
-                {
-                  "preset": "conventionalcommits",
-                  "releaseRules": [
-                    {"type": "feat", "release": "minor"},
-                    {"type": "fix", "release": "patch"},
-                    {"type": "perf", "release": "patch"},
-                    {"type": "revert", "release": "patch"},
-                    {"type": "docs", "release": "patch"},
-                    {"type": "style", "release": "patch"},
-                    {"type": "refactor", "release": "patch"},
-                    {"type": "test", "release": "patch"},
-                    {"type": "build", "release": "patch"},
-                    {"type": "ci", "release": "patch"},
-                    {"type": "chore", "release": false},
-                    {"breaking": true, "release": "major"}
-                  ]
-                }
-              ],
-              [
-                "@semantic-release/release-notes-generator",
-                {
-                  "preset": "conventionalcommits"
-                }
-              ],
-              [
-                "@semantic-release/changelog",
-                {
-                  "changelogFile": "CHANGELOG.md"
-                }
-              ],
-              [
-                "@semantic-release/exec",
-                {
-                  "prepareCmd": "sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"${nextRelease.version}\"/g' update-manifest.json"
-                }
-              ],
-              [
-                "@semantic-release/git",
-                {
-                  "assets": ["CHANGELOG.md", "update-manifest.json"],
-                  "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
-                }
-              ],
+              ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+              ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+              ["@semantic-release/changelog", { "changelogFile": "CHANGELOG.md" }],
+              ["@semantic-release/git", { "assets": ["CHANGELOG.md"], "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}" }],
               "@semantic-release/github"
             ]
           }
