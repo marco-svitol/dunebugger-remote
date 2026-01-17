@@ -6,32 +6,32 @@ on:
       - main
       - develop
 
-concurrency:
-  group: semantic-release-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: write
   issues: write
   pull-requests: write
+  actions: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-
+    outputs:
+      released: ${{ steps.release_info.outputs.released }}
+      version: ${{ steps.release_info.outputs.version }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install semantic-release
+      - name: Install semantic-release and plugins
         run: |
           npm install -g \
             semantic-release@23 \
@@ -46,6 +46,7 @@ jobs:
           cat > .releaserc.json << 'EOF'
           {
             "branches": [
+              "+([0-9])?(.{+([0-9]),x}).x",
               "main",
               {
                 "name": "develop",
@@ -53,10 +54,51 @@ jobs:
               }
             ],
             "plugins": [
-              ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
-              ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
-              ["@semantic-release/changelog", { "changelogFile": "CHANGELOG.md" }],
-              ["@semantic-release/git", { "assets": ["CHANGELOG.md"], "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}" }],
+              [
+                "@semantic-release/commit-analyzer",
+                {
+                  "preset": "conventionalcommits",
+                  "releaseRules": [
+                    {"type": "feat", "release": "minor"},
+                    {"type": "fix", "release": "patch"},
+                    {"type": "perf", "release": "patch"},
+                    {"type": "revert", "release": "patch"},
+                    {"type": "docs", "release": "patch"},
+                    {"type": "style", "release": "patch"},
+                    {"type": "refactor", "release": "patch"},
+                    {"type": "test", "release": "patch"},
+                    {"type": "build", "release": "patch"},
+                    {"type": "ci", "release": "patch"},
+                    {"type": "chore", "release": false},
+                    {"breaking": true, "release": "major"}
+                  ]
+                }
+              ],
+              [
+                "@semantic-release/release-notes-generator",
+                {
+                  "preset": "conventionalcommits"
+                }
+              ],
+              [
+                "@semantic-release/changelog",
+                {
+                  "changelogFile": "CHANGELOG.md"
+                }
+              ],
+              [
+                "@semantic-release/exec",
+                {
+                  "prepareCmd": "sed -i 's/\"version\": \"[^\"]*\"/\"version\": \"${nextRelease.version}\"/g' update-manifest.json"
+                }
+              ],
+              [
+                "@semantic-release/git",
+                {
+                  "assets": ["CHANGELOG.md", "update-manifest.json"],
+                  "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
+                }
+              ],
               "@semantic-release/github"
             ]
           }
@@ -66,3 +108,62 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
+
+      - name: Output release info
+        id: release_info
+        run: |
+          # Check if a new tag was created
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$LATEST_TAG" ]; then
+            VERSION=${LATEST_TAG#v}  # Remove 'v' prefix if present
+            echo "Released version: ${VERSION}"
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "released=true" >> $GITHUB_OUTPUT
+
+            # Add summary
+            echo "### Release Created :rocket:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Version:** ${VERSION}" >> $GITHUB_STEP_SUMMARY
+            echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Tag:** ${LATEST_TAG}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Docker image will be built automatically by the docker-build-push workflow (triggered by tag push)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No release created"
+            echo "released=false" >> $GITHUB_OUTPUT
+          fi
+
+  trigger-docker-build:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    
+    steps:
+      - name: Wait for tag to propagate
+        run: sleep 5
+
+      - name: Trigger Docker Build Workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ needs.release.outputs.version }}';
+            const tag = `v${version}`;
+            
+            console.log(`Triggering Docker build for tag: ${tag}`);
+            
+            // Trigger workflow_dispatch on the tag
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'docker-build-push.yml',
+                ref: tag
+              });
+              console.log('Docker build workflow dispatched successfully');
+            } catch (error) {
+              console.error('Failed to trigger Docker build:', error.message);
+              throw error;
+            }
