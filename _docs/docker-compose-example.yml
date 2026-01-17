@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  remote:
+    image: ghcr.io/marco-svitol/dunebugger-remote:latest
+    container_name: dunebugger-remote
+    restart: unless-stopped
+    network_mode: host
+    
+    environment:
+      - DEVICE_ID=${DEVICE_ID:-dunebugger-001}
+      - LOCATION_DESCRIPTION=${LOCATION_DESCRIPTION:-Development Environment}
+      - NATS_SERVER=${NATS_SERVER:-nats://localhost:4222}
+      - WEBSOCKET_URL=${WEBSOCKET_URL:-wss://api.dunebugger.com/ws}
+      
+    volumes:
+      # System information (read-only)
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      
+      # Update coordinator communication (read-write)
+      - /var/dunebugger/updates:/var/dunebugger/updates
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  
+  scheduler:
+    image: ghcr.io/marco-svitol/dunebugger-scheduler:latest
+    container_name: dunebugger-scheduler
+    restart: unless-stopped
+    
+    environment:
+      - NATS_SERVER=${NATS_SERVER:-nats://localhost:4222}
+    
+    depends_on:
+      - nats
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  
+  nats:
+    image: nats:latest
+    container_name: dunebugger-nats
+    restart: unless-stopped
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    
+    command: ["-js", "-m", "8222"]
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

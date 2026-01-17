@@ -1,0 +1,63 @@
+{
+  "component": "dunebugger-remote",
+  "version": "RELEASE_VERSION",
+  "description": "Update manifest for dunebugger-remote self-update (executed by host coordinator)",
+  
+  "note": "This manifest is for reference only. The actual update is executed by the host coordinator via component scripts at /opt/dunebugger/remote/update.sh"
+}
+      "retry": {
+        "max_attempts": 6,
+        "delay": 5
+      }
+    },
+    {
+      "action": "exec",
+      "command": "docker exec dunebugger-remote python -c \"from app.version import get_version_info; print(get_version_info()['full_version'])\"",
+      "expected_output": "RELEASE_VERSION",
+      "description": "Verify new container is running correct version",
+      "timeout": 10,
+      "retry": {
+        "max_attempts": 3,
+        "delay": 3
+      }
+    },
+    {
+      "action": "exec",
+      "command": "docker logs --tail 50 dunebugger-remote",
+      "description": "Check container logs for startup errors",
+      "timeout": 10
+    }
+  ],
+  
+  "rollback_steps": [
+    {
+      "action": "log",
+      "message": "Rolling back dunebugger-remote to previous version"
+    },
+    {
+      "action": "exec",
+      "command": "docker-compose -f /opt/dunebugger/docker-compose.yml stop remote",
+      "description": "Stop failed remote container",
+      "timeout": 30
+    },
+    {
+      "action": "exec",
+      "command": "cp /opt/dunebugger/docker-compose.yml.backup /opt/dunebugger/docker-compose.yml",
+      "description": "Restore docker-compose.yml from backup",
+      "timeout": 5
+    },
+    {
+      "action": "exec",
+      "command": "docker-compose -f /opt/dunebugger/docker-compose.yml up -d remote",
+      "description": "Start remote with previous version",
+      "timeout": 60
+    },
+    {
+      "action": "exec",
+      "command": "sleep 10 && docker ps --filter name=remote --filter status=running --format '{{.Names}}'",
+      "expected_output": "remote",
+      "description": "Verify rollback successful",
+      "timeout": 30
+    }
+  ]
+}
