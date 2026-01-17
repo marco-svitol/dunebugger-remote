@@ -12,13 +12,23 @@ The dunebugger component that handles remote communication with the dunbugger se
 
 ## Component Updater
 
-The remote component includes a sophisticated updater module that manages version tracking and automated updates for all DuneBugger components:
+The remote component includes a sophisticated updater module that manages version tracking and automated updates for all DuneBugger components using a **hybrid architecture**:
 
 - **Automatic version checking** (configurable interval, default 24 hours)
 - **Manual update triggering** via WebSocket
 - **Supports both containerized and non-containerized components**
-- **Safe update procedures** with pre-checks, health validation, and automatic rollback
-- **Backup and restore** functionality
+- **Host coordinator** executes Docker/system commands with proper privileges
+- **File-based communication** via shared volume for secure container updates
+- **Safe update procedures** with health validation and automatic rollback
+
+### Architecture
+
+The updater uses a hybrid approach:
+- **dunebugger-remote** (in container): Coordinates updates, checks versions, provides WebSocket API
+- **update-coordinator** (on host): Executes Docker/system commands with proper privileges  
+- **Shared volume**: File-based communication at `/var/dunebugger/updates/`
+
+See [_host_coordinator/README.md](_host_coordinator/README.md) for host coordinator setup.
 
 For complete documentation, see [UPDATER_MODULE.md](UPDATER_MODULE.md)
 

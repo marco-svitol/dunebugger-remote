@@ -9,9 +9,7 @@ import aiohttp
 import yaml
 import json
 import time
-import tarfile
-import shutil
-import subprocess
+import uuid
 from pathlib import Path
 from typing import Dict, Optional, List, Callable
 from dataclasses import dataclass, asdict, field
@@ -51,17 +49,6 @@ class ComponentVersion:
             data['last_checked'] = self.last_checked.isoformat()
         return data
 
-@dataclass
-class UpdateManifest:
-    """Represents the update instructions from a component"""
-    version: str
-    component_type: str  # 'python_app', 'container'
-    pre_update_checks: List[dict]
-    update_steps: List[dict]
-    post_update_checks: List[dict]
-    rollback_steps: List[dict]
-    min_remote_version: Optional[str] = None  # Minimum remote version required
-
 
 class ComponentUpdater:
     """Manages version checking and updates for all dunebugger components"""
@@ -77,9 +64,13 @@ class ComponentUpdater:
         self.github_account = getattr(settings, 'githubAccount')
         self.include_prerelease = getattr(settings, 'includePrerelease', False)
         self.check_interval_hours = getattr(settings, 'updateCheckIntervalHours', 24)
-        self.docker_compose_path = Path(getattr(settings, 'dockerComposePath', '/opt/dunebugger/docker-compose.yml'))
         self.core_install_path = Path(getattr(settings, 'coreInstallPath', '/opt/dunebugger/core'))
         self.backup_path = Path(getattr(settings, 'backupPath', '/opt/dunebugger/backups'))
+        self.docker_compose_path = Path(getattr(settings, 'dockerComposePath', '/docker-compose.yml'))
+        
+        # Shared volume paths for coordinator communication
+        self.update_request_dir = Path("/var/dunebugger/updates/requests")
+        self.update_status_dir = Path("/var/dunebugger/updates/status")
         
         # Periodic check task
         self._periodic_check_task = None
@@ -307,7 +298,7 @@ class ComponentUpdater:
     def _verify_update_order_requirement(self, component_key: str) -> dict:
         """
         Verify that if there are updates available for multiple components,
-        'core' must always be updated first.
+        'remote' must always be updated first.
         
         Args:
             component_key: The component being updated
@@ -315,14 +306,14 @@ class ComponentUpdater:
         Returns:
             Dictionary with success status, message, and level
         """
-        # If updating core itself, no check needed
-        if component_key == 'core':
+        # If updating remote itself, no check needed
+        if component_key == 'remote':
             return {"success": True, "message": ""}
         
-        # Check if core has an available update
-        core_version_info = self.components.get('core', {}).get('version_info')
-        if core_version_info and core_version_info.update_available:
-            msg = f"Cannot update {component_key} before core. Core has an available update and must be updated first."
+        # Check if remote has an available update
+        remote_version_info = self.components.get('remote', {}).get('version_info')
+        if remote_version_info and remote_version_info.update_available:
+            msg = f"Cannot update {component_key} before remote. Remote has an available update and must be updated first."
             logger.warning(msg)
             return {
                 "success": False, 
@@ -332,446 +323,91 @@ class ComponentUpdater:
         
         return {"success": True, "message": ""}
 
-    async def update_component(self, component_key) -> dict:
+    async def update_component(self, component_key, dry_run: bool = False) -> dict:
         """
-        Update a specific component
+        Update a specific component via host coordinator
+        
+        Writes update request to shared volume and polls for status response.
+        The host coordinator executes the actual update script.
         
         Args:
             component_key: 'core', 'scheduler', or 'remote'
-            dry_run: If True, only simulate the update
+            dry_run: If True, only simulate the update (not supported yet)
             
         Returns:
             Dictionary with success status and message
         """
-        results = {}
-
         component = self.components.get(component_key)
 
         # If the component is not found, return error
         if not component:
             return {"success": False, "message": f"Unknown component: {component_key}", "level": "error"}
 
-        # Verify update order requirement: core must be updated first if it has updates available
+        # Verify update order requirement: remote must be updated first if it has updates available
         order_check = self._verify_update_order_requirement(component_key)
         if not order_check["success"]:
             return order_check
 
         version_info = component['version_info']
         if not version_info.update_available:
-            return {"success": False, "message": f"No update available for {component_key}"}
+            return {"success": False, "message": f"No update available for {component_key}", "level": "info"}
         
-        logger.info(f"{'[DRY RUN] ' if dry_run else ''}Updating {component_key} "
-                   f"from {version_info.current_version} to {version_info.latest_version}")
+        logger.info(f"Requesting update for {component_key} from {version_info.current_version} to {version_info.latest_version}")
         
         try:
-            # Fetch update manifest
-            manifest = await self._fetch_update_manifest(
-                self.REPOS[component_key], 
-                version_info.latest_version
-            )
+            # Write update request to shared volume
+            request_id = str(uuid.uuid4())
+            request = {
+                "component": component_key,
+                "action": "update",
+                "version": version_info.latest_version,
+                "request_id": request_id,
+                "timestamp": datetime.now().isoformat()
+            }
             
-            # Check if remote version is compatible
-            if manifest and manifest.min_remote_version:
-                remote_version = self.components['remote']['version_info'].current_version
-                if not self._is_version_compatible(remote_version, manifest.min_remote_version):
-                    msg = f"Remote version {remote_version} is too old. Minimum required: {manifest.min_remote_version}"
-                    logger.error(msg)
-                    return {"success": False, "message": msg}
+            # Ensure request directory exists
+            self.update_request_dir.mkdir(parents=True, exist_ok=True)
             
-            # Validate pre-update checks
-            if not await self._run_pre_checks(component_key, manifest, dry_run):
-                return {"success": False, "message": "Pre-update checks failed"}
+            request_file = self.update_request_dir / f"{request_id}.json"
+            with open(request_file, 'w') as f:
+                json.dump(request, f, indent=2)
             
-            # Execute update based on component type
-            if component_key == 'core':
-                success = await self._update_python_app(version_info, manifest, dry_run)
-            else:  # scheduler or remote
-                success = await self._update_container(component_key, version_info, manifest, dry_run)
+            logger.info(f"Update request written: {request_file}")
             
-            if success:
-                # Run post-update checks
-                if await self._run_post_checks(component_key, manifest, dry_run):
-                    if not dry_run:
-                        # Refresh version from source to confirm update
-                        self._refresh_component_version(component_key)
-                        version_info.update_available = False
-                    logger.info(f"Successfully updated {component_key}")
-                    return {"success": True, "message": f"Updated {component_key} to {version_info.current_version}"}
+            # Poll for status response
+            status = await self._wait_for_status(request_id, timeout=600)  # 10 minute timeout
+            
+            if status:
+                if status.get('success'):
+                    logger.info(f"Successfully updated {component_key} to {version_info.latest_version}")
+                    # Refresh version from source to confirm update
+                    self._refresh_component_version(component_key)
+                    version_info.update_available = False
+                    return {
+                        "success": True,
+                        "message": status.get('message', f"Successfully updated {component_key}"),
+                        "level": "info",
+                        "output": status.get('output', '')
+                    }
                 else:
-                    logger.error(f"Post-update checks failed for {component_key}")
-                    await self._rollback(component_key, manifest, dry_run)
-                    return {"success": False, "message": "Post-update checks failed, rolled back"}
-            
-            return {"success": False, "message": "Update execution failed"}
-            
-        except Exception as e:
-            logger.error(f"Update failed for {component_key}: {e}")
-            return {"success": False, "message": str(e)}
-    
-    async def _update_container(self, component_key: str, version_info: ComponentVersion, 
-                               manifest: Optional[UpdateManifest], dry_run: bool) -> bool:
-        """
-        Update a containerized component by modifying docker-compose.yaml
-        """
-        try:
-            if not self.docker_compose_path.exists():
-                logger.error(f"Docker compose file not found: {self.docker_compose_path}")
-                return False
-            
-            # Read current docker-compose
-            with open(self.docker_compose_path, 'r') as f:
-                compose_config = yaml.safe_load(f)
-            
-            # Update image tag for the specific service
-            service_name = component_key
-            if service_name in compose_config.get('services', {}):
-                current_image = compose_config['services'][service_name]['image']
-                # Parse image name and update tag
-                image_parts = current_image.rsplit(':', 1)
-                new_image = f"{image_parts[0]}:{version_info.latest_version}"
-                
-                logger.info(f"Updating {service_name} image: {current_image} -> {new_image}")
-                
-                if not dry_run:
-                    # Backup current compose file
-                    backup_file = self.backup_path / f"docker-compose.{datetime.now().strftime('%Y%m%d_%H%M%S')}.yml"
-                    self.backup_path.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(self.docker_compose_path, backup_file)
-                    logger.info(f"Backed up docker-compose to {backup_file}")
-                    
-                    compose_config['services'][service_name]['image'] = new_image
-                    
-                    # Write updated compose file
-                    with open(self.docker_compose_path, 'w') as f:
-                        yaml.dump(compose_config, f, default_flow_style=False, sort_keys=False)
-                    
-                    # Pull new image and restart service
-                    await self._docker_compose_update(service_name)
-                
-                return True
+                    logger.error(f"Update failed for {component_key}: {status.get('error')}")
+                    return {
+                        "success": False,
+                        "message": status.get('message', 'Update failed'),
+                        "level": "error",
+                        "error": status.get('error', '')
+                    }
             else:
-                logger.error(f"Service {service_name} not found in docker-compose.yaml")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Failed to update container {component_key}: {e}")
-            return False
-    
-    async def _docker_compose_update(self, service_name: str):
-        """Execute docker-compose pull and up for specific service"""
-        compose_dir = self.docker_compose_path.parent
-        
-        try:
-            # Pull new image
-            pull_cmd = ["docker-compose", "-f", str(self.docker_compose_path), "pull", service_name]
-            logger.info(f"Executing: {' '.join(pull_cmd)}")
-            process = await asyncio.create_subprocess_exec(
-                *pull_cmd,
-                cwd=compose_dir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-            if process.returncode != 0:
-                logger.error(f"Docker pull failed: {stderr.decode()}")
-                raise Exception(f"Docker pull failed with code {process.returncode}")
-            
-            logger.info(f"Docker pull output: {stdout.decode()}")
-            
-            # Recreate and restart service
-            up_cmd = ["docker-compose", "-f", str(self.docker_compose_path), "up", "-d", service_name]
-            logger.info(f"Executing: {' '.join(up_cmd)}")
-            process = await asyncio.create_subprocess_exec(
-                *up_cmd,
-                cwd=compose_dir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-            if process.returncode != 0:
-                logger.error(f"Docker up failed: {stderr.decode()}")
-                raise Exception(f"Docker up failed with code {process.returncode}")
-            
-            logger.info(f"Docker up output: {stdout.decode()}")
+                logger.error(f"Update timeout for {component_key} - no status received")
+                return {
+                    "success": False,
+                    "message": "Update timeout - coordinator did not respond",
+                    "level": "error"
+                }
             
         except Exception as e:
-            logger.error(f"Docker compose update failed: {e}")
-            raise
-    
-    async def _update_python_app(self, version_info: ComponentVersion, 
-                                manifest: Optional[UpdateManifest], dry_run: bool) -> bool:
-        """
-        Update the dunebugger-core Python application
-        Download and extract the release artifact
-        """
-        try:
-            # Find the tar.gz asset from the latest release
-            latest = await self._fetch_latest_version(self.REPOS['core'])
-            tar_asset = None
-            
-            for asset in latest.get('assets', []):
-                if asset['name'].endswith('.tar.gz'):
-                    tar_asset = asset
-                    break
-            
-            if not tar_asset:
-                logger.error("No tar.gz asset found in release")
-                return False
-            
-            download_url = tar_asset['browser_download_url']
-            logger.info(f"Downloading core from: {download_url}")
-            
-            if not dry_run:
-                # Create temporary directory for download
-                temp_dir = Path('/tmp/dunebugger_update')
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                
-                # Download the artifact
-                tar_path = temp_dir / tar_asset['name']
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(download_url) as response:
-                        if response.status == 200:
-                            with open(tar_path, 'wb') as f:
-                                f.write(await response.read())
-                            logger.info(f"Downloaded to {tar_path}")
-                        else:
-                            raise Exception(f"Download failed with status {response.status}")
-                
-                # Backup current installation
-                if self.core_install_path.exists():
-                    backup_file = self.backup_path / f"core.{datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
-                    self.backup_path.mkdir(parents=True, exist_ok=True)
-                    shutil.make_archive(str(backup_file).replace('.tar.gz', ''), 'gztar', self.core_install_path)
-                    logger.info(f"Backed up core to {backup_file}")
-                
-                # Extract to temporary location
-                extract_dir = temp_dir / 'extracted'
-                extract_dir.mkdir(exist_ok=True)
-                with tarfile.open(tar_path, 'r:gz') as tar:
-                    tar.extractall(extract_dir)
-                
-                # Find the extracted directory (usually has version in name)
-                extracted_dirs = list(extract_dir.iterdir())
-                if not extracted_dirs:
-                    raise Exception("No directory found after extraction")
-                
-                source_dir = extracted_dirs[0]
-                
-                # Stop the core service before updating
-                logger.info("Stopping dunebugger core service")
-                subprocess.run(['systemctl', 'stop', 'dunebugger'], check=False)
-                
-                # Move to installation directory
-                if self.core_install_path.exists():
-                    shutil.rmtree(self.core_install_path)
-                shutil.move(str(source_dir), str(self.core_install_path))
-                logger.info(f"Installed core to {self.core_install_path}")
-                
-                # Install/update requirements
-                requirements_file = self.core_install_path / 'requirements.txt'
-                if requirements_file.exists():
-                    logger.info("Installing requirements")
-                    subprocess.run(['pip3', 'install', '-r', str(requirements_file)], check=True)
-                
-                # Start the core service
-                logger.info("Starting dunebugger core service")
-                subprocess.run(['systemctl', 'start', 'dunebugger'], check=False)
-                
-                # Cleanup
-                shutil.rmtree(temp_dir)
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to update Python app: {e}")
-            return False
-    
-    async def _fetch_update_manifest(self, repo_name: str, version: str) -> Optional[UpdateManifest]:
-        """
-        Fetch the update manifest from the repository
-        Manifest should be included in releases or fetched from a known location
-        """
-        # Try to fetch manifest from repository
-        manifest_url = f"https://raw.githubusercontent.com/{self.github_account}/{repo_name}/v{version}/update-manifest.yaml"
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(manifest_url) as response:
-                    if response.status == 200:
-                        manifest_data = yaml.safe_load(await response.text())
-                        return UpdateManifest(
-                            version=manifest_data.get('version', version),
-                            component_type=manifest_data.get('component_type', 'unknown'),
-                            pre_update_checks=manifest_data.get('pre_update_checks', []),
-                            update_steps=manifest_data.get('update_steps', []),
-                            post_update_checks=manifest_data.get('post_update_checks', []),
-                            rollback_steps=manifest_data.get('rollback_steps', []),
-                            min_remote_version=manifest_data.get('min_remote_version')
-                        )
-                    else:
-                        logger.warning(f"No update manifest found at {manifest_url}, using defaults")
-                        return None
-        except Exception as e:
-            logger.warning(f"Could not fetch update manifest: {e}, proceeding without it")
-            return None
-    
-    async def _run_pre_checks(self, component_key: str, manifest: Optional[UpdateManifest], 
-                             dry_run: bool) -> bool:
-        """Run pre-update validation checks"""
-        logger.info(f"Running pre-update checks for {component_key}")
-        
-        if not manifest or not manifest.pre_update_checks:
-            logger.info("No pre-update checks defined, skipping")
-            return True
-        
-        for check in manifest.pre_update_checks:
-            check_type = check.get('type')
-            
-            if check_type == 'disk_space':
-                # Check available disk space
-                minimum_mb = check.get('minimum_mb', 500)
-                stat = shutil.disk_usage('/')
-                available_mb = stat.free / (1024 * 1024)
-                if available_mb < minimum_mb:
-                    logger.error(f"Insufficient disk space: {available_mb:.2f}MB < {minimum_mb}MB")
-                    return False
-                logger.info(f"Disk space check passed: {available_mb:.2f}MB available")
-            
-            elif check_type == 'backup_exists':
-                # Check if recent backup exists
-                max_age_hours = check.get('max_age_hours', 24)
-                # For now, we create backup during update, so this passes
-                logger.info(f"Backup check: will create backup during update")
-            
-            elif check_type == 'service_running':
-                # Check if a service is running
-                service_name = check.get('service_name')
-                if service_name and not dry_run:
-                    result = subprocess.run(
-                        ['systemctl', 'is-active', service_name],
-                        capture_output=True,
-                        text=True
-                    )
-                    if result.returncode != 0:
-                        logger.warning(f"Service {service_name} is not running")
-                    else:
-                        logger.info(f"Service {service_name} is running")
-        
-        return True
-    
-    async def _run_post_checks(self, component_key: str, manifest: Optional[UpdateManifest], 
-                              dry_run: bool) -> bool:
-        """Run post-update health checks"""
-        logger.info(f"Running post-update checks for {component_key}")
-        
-        if not manifest or not manifest.post_update_checks:
-            logger.info("No post-update checks defined, skipping")
-            # Give services time to start
-            if not dry_run:
-                await asyncio.sleep(10)
-            return True
-        
-        for check in manifest.post_update_checks:
-            check_type = check.get('type')
-            
-            if check_type == 'health_endpoint':
-                url = check.get('url')
-                timeout = check.get('timeout_seconds', 60)
-                expected_status = check.get('expected_status', 200)
-                
-                if url and not dry_run:
-                    # Wait for service to start
-                    await asyncio.sleep(5)
-                    
-                    try:
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
-                                if response.status == expected_status:
-                                    logger.info(f"Health check passed: {url} returned {response.status}")
-                                else:
-                                    logger.error(f"Health check failed: {url} returned {response.status}, expected {expected_status}")
-                                    return False
-                    except Exception as e:
-                        logger.error(f"Health check failed: {e}")
-                        return False
-            
-            elif check_type == 'container_running':
-                container_name = check.get('container_name')
-                if container_name and not dry_run:
-                    await asyncio.sleep(5)
-                    result = subprocess.run(
-                        ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Names}}'],
-                        capture_output=True,
-                        text=True
-                    )
-                    if container_name in result.stdout:
-                        logger.info(f"Container {container_name} is running")
-                    else:
-                        logger.error(f"Container {container_name} is not running")
-                        return False
-            
-            elif check_type == 'service_active':
-                service_name = check.get('service_name')
-                if service_name and not dry_run:
-                    await asyncio.sleep(5)
-                    result = subprocess.run(
-                        ['systemctl', 'is-active', service_name],
-                        capture_output=True,
-                        text=True
-                    )
-                    if result.returncode == 0:
-                        logger.info(f"Service {service_name} is active")
-                    else:
-                        logger.error(f"Service {service_name} is not active")
-                        return False
-        
-        return True
-    
-    async def _rollback(self, component_key: str, manifest: Optional[UpdateManifest], dry_run: bool):
-        """Rollback to previous version if update fails"""
-        logger.warning(f"Rolling back {component_key}")
-        
-        if dry_run:
-            logger.info("[DRY RUN] Would rollback")
-            return
-        
-        try:
-            if component_key == 'core':
-                # Restore from latest backup
-                backups = sorted(self.backup_path.glob('core.*.tar.gz'), reverse=True)
-                if backups:
-                    latest_backup = backups[0]
-                    logger.info(f"Restoring from backup: {latest_backup}")
-                    
-                    # Stop service
-                    subprocess.run(['systemctl', 'stop', 'dunebugger'], check=False)
-                    
-                    # Remove current installation
-                    if self.core_install_path.exists():
-                        shutil.rmtree(self.core_install_path)
-                    
-                    # Extract backup
-                    self.core_install_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.unpack_archive(latest_backup, self.core_install_path.parent)
-                    
-                    # Start service
-                    subprocess.run(['systemctl', 'start', 'dunebugger'], check=False)
-                    
-                    logger.info("Rollback completed")
-            else:
-                # Restore docker-compose from backup
-                backups = sorted(self.backup_path.glob('docker-compose.*.yml'), reverse=True)
-                if backups:
-                    latest_backup = backups[0]
-                    logger.info(f"Restoring docker-compose from backup: {latest_backup}")
-                    shutil.copy2(latest_backup, self.docker_compose_path)
-                    
-                    # Restart service
-                    await self._docker_compose_update(component_key)
-                    
-                    logger.info("Rollback completed")
-        except Exception as e:
-            logger.error(f"Rollback failed: {e}")
+            logger.error(f"Update failed for {component_key}: {e}", exc_info=True)
+            return {"success": False, "message": f"Update failed: {str(e)}", "level": "error"}
     
     def _compare_versions(self, current: str, latest: str) -> bool:
         """
@@ -901,6 +537,8 @@ class ComponentUpdater:
     def _get_container_version(self, service_name: str) -> str:
         """Get version of a containerized service from Docker image tag
         
+        Reads the docker-compose.yml file (must be mounted into container).
+        
         Args:
             service_name: Name of the service in docker-compose.yml
             
@@ -995,3 +633,37 @@ class ComponentUpdater:
             })
         
         return result
+    
+    async def _wait_for_status(self, request_id: str, timeout: int = 600) -> Optional[dict]:
+        """Wait for status response from coordinator"""
+        status_file = self.update_status_dir / f"{request_id}.json"
+        start_time = time.time()
+        
+        logger.info(f"Polling for status: {status_file}")
+        
+        while time.time() - start_time < timeout:
+            if status_file.exists():
+                try:
+                    with open(status_file, 'r') as f:
+                        status = json.load(f)
+                    
+                    # Clean up status file
+                    status_file.unlink()
+                    
+                    logger.info(f"Received status for request {request_id}")
+                    return status
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON in status file: {e}")
+                    return None
+                except Exception as e:
+                    logger.error(f"Error reading status file: {e}")
+                    return None
+            
+            # Poll every second
+            await asyncio.sleep(1)
+        
+        logger.warning(f"Timeout waiting for status {request_id}")
+        return None
+
+

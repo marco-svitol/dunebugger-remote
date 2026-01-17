@@ -2,45 +2,83 @@
 
 ## Overview
 
-The Component Updater module is responsible for managing version tracking and automated updates for all DuneBugger components. It provides a centralized, secure, and reliable way to keep the system up-to-date.
+The Component Updater module is responsible for managing version tracking and automated updates for all DuneBugger components using a **hybrid architecture**. It provides a centralized, secure, and reliable way to keep the system up-to-date without requiring Docker-in-Docker or elevated container privileges.
+
+### Hybrid Architecture
+
+The updater implements a two-tier approach:
+
+1. **dunebugger-remote** (coordinator, runs in container):
+   - Checks for updates from GitHub
+   - Tracks component versions and health
+   - Provides WebSocket API for user interaction
+   - Writes update requests to shared volume
+   - Monitors update progress
+
+2. **update-coordinator** (executor, runs on host):
+   - Watches shared volume for requests
+   - Executes component update scripts with proper privileges
+   - Has direct access to Docker daemon
+   - Writes status responses to shared volume
+
+**Communication**: File-based via shared volume at `/var/dunebugger/updates/`
+
+This design solves the Docker-in-Docker problem, keeps the container unprivileged and lightweight, and provides clear separation of concerns.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        DuneBugger Remote                             │
+┌──────────────────────────────────────────────────────────────────────┐
+│                     Raspberry Pi Host System                         │
 │                                                                       │
 │  ┌────────────────────────────────────────────────────────────────┐ │
-│  │              ComponentUpdater                                   │ │
-│  │                                                                  │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │ │
-│  │  │    Core      │  │  Scheduler   │  │    Remote    │         │ │
-│  │  │  (Python)    │  │ (Container)  │  │ (Container)  │         │ │
-│  │  │              │  │              │  │              │         │ │
-│  │  │ Current: 1.0 │  │ Current: 1.0 │  │ Current: 1.0 │         │ │
-│  │  │ Latest:  1.1 │  │ Latest:  1.1 │  │ Latest:  1.1 │         │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘         │ │
-│  │                                                                  │ │
-│  │  Periodic Check (24h)  ────────────────┐                        │ │
-│  │  Manual Check (WebSocket) ─────────────┤                        │ │
-│  │                                         │                        │ │
-│  └─────────────────────────────────────────┼────────────────────────┘ │
-│                                             │                          │
-└─────────────────────────────────────────────┼──────────────────────────┘
-                                              │
-                                              ▼
-                        ┌──────────────────────────────────┐
-                        │      GitHub Repositories         │
-                        │                                  │
-                        │  • marco-svitol/dunebugger       │
-                        │  • marco-svitol/dunebugger-...   │
-                        │  • marco-svitol/dunebugger-...   │
-                        │                                  │
-                        │  Releases with:                  │
-                        │  - Version tags                  │
-                        │  - Release artifacts             │
-                        │  - Update manifests (optional)   │
-                        └──────────────────────────────────┘
+│  │          Update Coordinator (systemd service, host)            │ │
+│  │          Watches: /var/dunebugger/updates/requests/            │ │
+│  │          Writes: /var/dunebugger/updates/status/               │ │
+│  └────────────────┬───────────────────────────────────────────────┘ │
+│                   │  Executes update scripts                         │
+│       ┌───────────┼───────────────┬──────────────────┐              │
+│       ▼           ▼               ▼                  │              │
+│   ┌──────┐   ┌─────────┐   ┌──────────┐            │              │
+│   │ core │   │scheduler│   │  remote  │ (containers & services)    │
+│   │      │   │         │   │          │            │              │
+│   │update│   │ update  │   │  update  │            │              │
+│   │.sh   │   │ .sh     │   │  .sh     │            │              │
+│   └──────┘   └─────────┘   └──────────┘            │              │
+│                                                      │              │
+│  Shared Volume: /var/dunebugger/updates/           │              │
+│  ├── requests/  (container → host)                  │              │
+│  └── status/    (host → container)                  │              │
+└──────────────────────────────────────────────────────┘              │
+                                                                      │
+         ┌────────────────────────────────────────────────────────┐  │
+         │  DuneBugger Remote Container                           │  │
+         │                                                         │  │
+         │  ┌──────────────────────────────────────────────────┐ │  │
+         │  │         ComponentUpdater (coordinator)           │ │  │
+         │  │                                                   │ │  │
+         │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐ │ │  │
+         │  │  │   Core     │  │ Scheduler  │  │  Remote    │ │ │  │
+         │  │  │ Current:1.0│  │Current: 1.0│  │Current: 1.0│ │ │  │
+         │  │  │ Latest: 1.1│  │Latest:  1.1│  │Latest:  1.1│ │ │  │
+         │  │  └────────────┘  └────────────┘  └────────────┘ │ │  │
+         │  │                                                   │ │  │
+         │  │  Checks: GitHub API (version info)               │ │  │
+         │  │  Updates: Writes to /var/dunebugger/updates/     │ │  │
+         │  │  API: WebSocket (user interaction)               │ │  │
+         │  └──────────────────────────────────────────────────┘ │  │
+         └────────────────────────────────────────────────────────┘  │
+                                  │                                   │
+                                  ▼                                   │
+                        ┌──────────────────────────────────┐          │
+                        │      GitHub Repositories         │          │
+                        │                                  │          │
+                        │  • marco-svitol/dunebugger       │          │
+                        │  • marco-svitol/dunebugger-...   │          │
+                        │  • marco-svitol/dunebugger-...   │          │
+                        │                                  │          │
+                        │  Releases with version tags      │          │
+                        └──────────────────────────────────┘          │
 ```
 
 ## Update Flow Diagram
@@ -133,6 +171,81 @@ The Component Updater module is responsible for managing version tracking and au
                     │  • Restart service │
                     │  • Report failure  │
                     └────────────────────┘
+```
+
+## Deployment Requirements
+
+### 1. Install Host Coordinator
+
+The update coordinator must be installed on the Raspberry Pi host:
+
+```bash
+cd _host_coordinator
+sudo ./install.sh
+```
+
+This installs:
+- Coordinator script at `/opt/dunebugger/update-coordinator/`
+- Systemd service `dunebugger-update-coordinator`
+- Required directories at `/var/dunebugger/updates/`
+
+Verify installation:
+```bash
+sudo systemctl status dunebugger-update-coordinator
+```
+
+See [_host_coordinator/README.md](../_host_coordinator/README.md) for details.
+
+### 2. Install Component Update Scripts
+
+Each component needs update scripts on the host:
+
+```bash
+# Copy from examples in _host_coordinator/component-scripts/
+sudo cp _host_coordinator/component-scripts/remote/*.sh /opt/dunebugger/remote/
+sudo cp _host_coordinator/component-scripts/scheduler/*.sh /opt/dunebugger/scheduler/
+sudo cp _host_coordinator/component-scripts/core/*.sh /opt/dunebugger/core/
+
+# Make executable
+sudo chmod +x /opt/dunebugger/*/update.sh
+sudo chmod +x /opt/dunebugger/*/rollback.sh
+sudo chmod +x /opt/dunebugger/*/health-check.sh
+```
+
+### 3. Configure Docker Compose
+
+Mount the shared volume in docker-compose.yml:
+
+```yaml
+services:
+  remote:
+    image: ghcr.io/marco-svitol/dunebugger-remote:latest
+    volumes:
+      - /var/dunebugger/updates:/var/dunebugger/updates  # Required for updates
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+```
+
+See [_docs/docker-compose-example.yml](../_docs/docker-compose-example.yml) for complete example.
+
+### 4. Configure Settings
+
+In `app/config/dunebugger.conf`:
+
+```ini
+[Updater]
+# GitHub account for release checks
+githubAccount = marco-svitol
+
+# Check for updates every 24 hours
+updateCheckIntervalHours = 24
+
+# Include pre-release versions
+includePrerelease = false
+
+# Component installation paths (on host)
+coreInstallPath = /opt/dunebugger/core
+backupPath = /opt/dunebugger/backups
 ```
 
 ## Components Managed

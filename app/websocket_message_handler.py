@@ -69,7 +69,7 @@ class MessageHandler:
                 elif subject in ["ntp_status"]:
                     self.send_ntp_status()
                 elif subject in ["check_updates"]:
-                    await self.handle_check_updates(websocket_message)
+                    await self.handle_check_updates()
                 elif subject in ["update"]:
                     await self.handle_perform_update(websocket_message)
                 else:
@@ -138,7 +138,7 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"Failed to send NTP status: {e}")
     
-    async def handle_check_updates(self, websocket_message):
+    async def handle_check_updates(self):
         """Handle check_updates request from WebSocket"""
         try:
             if not self.component_updater:
@@ -150,10 +150,9 @@ class MessageHandler:
                 return
             
             # Force check for updates
-            force = websocket_message.get('body', {}).get('force', True)
-            logger.info(f"Manual update check requested (force={force})")
+            logger.info(f"Manual update check requested. Forcing update check.")
             
-            results = await self.component_updater.check_updates(force=force)
+            results = await self.component_updater.check_updates(force=True)
             
             # Format response
             response = {
@@ -192,6 +191,10 @@ class MessageHandler:
             
             component = websocket_message.get('body', None)
             
+            # Remove prefix "dunebugger-" if present
+            if component and component.startswith("dunebugger-"):
+                component = component[len("dunebugger-"):]
+
             if not component:
                 raise ValueError("No component specified for update")
             
