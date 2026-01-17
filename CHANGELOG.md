@@ -1,3 +1,15 @@
+## [1.0.0-beta.8](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.7...v1.0.0-beta.8) (2026-01-17)
+
+
+### Features
+
+* leftover in semantic-release workflow ([#27](https://github.com/marco-svitol/dunebugger-remote/issues/27)) ([49bbbc1](https://github.com/marco-svitol/dunebugger-remote/commit/49bbbc1fb5c8ee17bffc96850ca4bcd9d532d883))
+
+
+### Bug Fixes
+
+* pipelines ([#26](https://github.com/marco-svitol/dunebugger-remote/issues/26)) ([f206d04](https://github.com/marco-svitol/dunebugger-remote/commit/f206d047501a9be5c61ad09e0ee36f369cdaa60d))
+
 ## [1.0.0-beta.7](https://github.com/marco-svitol/dunebugger-remote/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-01-17)
 
 
