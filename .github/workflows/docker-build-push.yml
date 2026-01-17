@@ -25,7 +25,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
+
+      - name: Debug - Show current ref
+        run: |
+          echo "GITHUB_REF: $GITHUB_REF"
+          echo "GITHUB_REF_NAME: $GITHUB_REF_NAME"
+          echo "Current commit: $(git rev-parse HEAD)"
+          echo "Current tag: $(git describe --tags --exact-match 2>/dev/null || echo 'Not on a tag')"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -41,15 +49,23 @@ jobs:
         id: docker_tags
         run: |
           TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-          VERSION="${GITHUB_REF_NAME#v}"
+          
+          # Get version from tag (remove 'v' prefix if present)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            echo "Error: This workflow should only run on tags"
+            exit 1
+          fi
+          
           COMMIT=$(git rev-parse --short HEAD)
 
-          if [[ "$GITHUB_REF_NAME" == *"-beta"* ]]; then
+          if [[ "$VERSION" == *"-beta"* ]]; then
             # Beta release (develop)
-            TAGS="${TAG}:develop,${TAG}:${VERSION},${TAG}:${VERSION}-${COMMIT}"
+            TAGS="${TAG}:develop,${TAG}:${VERSION},${TAG}:develop-${COMMIT}"
           else
             # Stable release (main)
-            TAGS="${TAG}:latest,${TAG}:${VERSION},${TAG}:${VERSION}-${COMMIT}"
+            TAGS="${TAG}:latest,${TAG}:${VERSION}"
           fi
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
@@ -61,7 +77,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/arm/v8
+          platforms: linux/amd64,linux/arm/v8
           push: true
           tags: ${{ steps.docker_tags.outputs.tags }}
           cache-from: type=gha
