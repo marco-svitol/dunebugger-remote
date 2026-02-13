@@ -1,6 +1,5 @@
 import threading
 import time
-import os
 import random
 import asyncio
 import atexit
@@ -15,7 +14,7 @@ class WebPubSubListener:
         self.internet_monitor = internet_monitor
         self.auth_client = auth_client
         self.ws_message_handler = ws_message_handler
-        self.group_name = os.getenv("WS_GROUP_NAME")
+        self.group_name = settings.groupName
         self.broadcast_enabled = settings.broadcastInitialState
         self.stop_event = threading.Event()
         # Store reference to the main event loop for use in callback methods

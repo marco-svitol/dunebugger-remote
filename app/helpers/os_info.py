@@ -8,7 +8,7 @@ import os
 import platform
 import subprocess
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from dunebugger_logging import logger
 
 

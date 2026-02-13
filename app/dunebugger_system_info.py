@@ -4,17 +4,17 @@ System Info Model for DuneBugger Remote
 Collects and structures system information for transmission to remote systems
 """
 
-import os
 from datetime import datetime, timezone
 from typing import Dict, Any
 from dunebugger_logging import logger
+from dunebugger_settings import settings
 from helpers.hardware_info import HardwareInfoHelper
 from helpers.os_info import OSInfoHelper
 from helpers.network_info import NetworkInfoHelper
 
 class SystemInfoModel:
     def __init__(self):
-        self.device_id = os.getenv("DEVICE_ID", "Environment Variable DEVICE_ID Not Set")
+        self.device_id = settings.deviceID
         self.hardware_helper = HardwareInfoHelper()
         self.os_helper = OSInfoHelper()
         self.network_helper = NetworkInfoHelper()
@@ -57,9 +57,8 @@ class SystemInfoModel:
         """
         Get location information
         """
-        default_description = "Environment Variable LOCATION_DESCRIPTION Not Set"
         return {
-            "description": os.getenv("LOCATION_DESCRIPTION", default_description)
+            "description": settings.locationDescription
         }
     
     def _get_minimal_system_info(self) -> Dict[str, Any]:

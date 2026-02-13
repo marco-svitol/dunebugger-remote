@@ -4,7 +4,6 @@ NTP Monitor for DuneBugger Remote
 Monitors NTP server availability and notifies other components of status changes
 """
 
-import time
 import socket
 import asyncio
 from dunebugger_logging import logger

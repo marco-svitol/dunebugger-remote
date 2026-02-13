@@ -7,8 +7,7 @@ Collects hardware-related system information
 import os
 import platform
 import psutil
-import subprocess
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from dunebugger_logging import logger
 
 

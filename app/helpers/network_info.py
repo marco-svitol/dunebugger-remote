@@ -8,7 +8,6 @@ import os
 import socket
 import subprocess
 import psutil
-import platform
 from typing import Dict, Any, List, Optional
 from dunebugger_logging import logger
 

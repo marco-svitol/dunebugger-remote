@@ -152,23 +152,10 @@ class MessageHandler:
             # Force check for updates
             logger.info(f"Manual update check requested. Forcing update check.")
             
-            results = await self.component_updater.check_updates(force=True)
-            
-            # Format response
-            response = {
-                "components": {
-                    key: {
-                        "current": comp.current_version,
-                        "latest": comp.latest_version,
-                        "update_available": comp.update_available,
-                        "release_notes": comp.release_notes,
-                        "last_checked": comp.last_checked.isoformat() if comp.last_checked else None
-                    }
-                    for key, comp in results.items()
-                }
-            }
-            
-            self.dispatch_message(response, "update_check_result")
+            await self.component_updater.check_updates(force=True)
+
+            self.send_system_info()  # Send updated system info including update status
+
             logger.info("Update check completed and sent")
             
         except Exception as e:

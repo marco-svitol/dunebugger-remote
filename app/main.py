@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
 import signal
-import sys
 
 # print component version info on startup
 from version import get_version_info

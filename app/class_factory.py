@@ -1,4 +1,3 @@
-import os
 from dunebugger_settings import settings
 from dunebugger_auth import AuthClient
 from dunebugger_websocket import WebPubSubListener
@@ -15,10 +14,10 @@ internet_monitor = InternetConnectionMonitor(test_domain=settings.testDomain, ch
 component_updater = ComponentUpdater()
 
 auth_client = AuthClient(
-    client_id=os.getenv("AUTH0_CLIENT_ID"),
-    client_secret=os.getenv("AUTH0_CLIENT_SECRET"),
-    username=os.getenv("AUTH0_USERNAME"),
-    password=os.getenv("AUTH0_PASSWORD"),
+    client_id=settings.clientID,
+    client_secret=settings.clientSecret,
+    username=settings.username,
+    password=settings.password,
 )
 
 websocket_message_handler = MessageHandler(settings.heartBeatEverySecs, settings.heartBeatLoopDurationSecs)
@@ -48,6 +47,7 @@ mqueue_handler.ntp_monitor = ntp_monitor
 # Wire up component updater
 websocket_message_handler.component_updater = component_updater
 websocket_message_handler.system_info_model.component_updater = component_updater
+component_updater.set_dispatch_callback(websocket_message_handler.dispatch_message)
 
 # Start internet monitoring if WebSocket is enabled
 if settings.websocketEnabled is True:

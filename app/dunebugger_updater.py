@@ -10,6 +10,7 @@ import yaml
 import json
 import time
 import uuid
+import glob
 from pathlib import Path
 from typing import Dict, Optional, List, Callable
 from dataclasses import dataclass, asdict, field
@@ -108,15 +109,90 @@ class ComponentUpdater:
         self.components['scheduler']['health'] = ComponentHealth(name='dunebugger-scheduler')
         self.components['remote']['health'] = ComponentHealth(name='dunebugger-remote', running=True, latest_heartbeat=time.time(), heartbeat_ttl=315576000)
 
+        # Callback for dispatching progress/result messages to frontend (set by class_factory)
+        self._dispatch_callback = None
+        # File to track the last request ID we issued for remote self-update
+        self._pending_request_file = Path("/var/dunebugger/updates/.pending_remote_request")
         
         logger.info(f"Initialized component versions - Core: {self.components['core']['version_info'].current_version}, "
                    f"Scheduler: {self.components['scheduler']['version_info'].current_version}, "
                    f"Remote: {self.components['remote']['version_info'].current_version}")
     
+    def set_dispatch_callback(self, callback):
+        """Set the callback function for dispatching messages to the frontend.
+        The callback signature: callback(body: dict, subject: str)"""
+        self._dispatch_callback = callback
+    
+    async def check_pending_status(self):
+        """
+        Check for pending status files from before container restart.
+        
+        This solves the remote self-update paradox: when remote updates itself,
+        the container restarts and the _wait_for_status() coroutine dies.
+        On startup, the new container checks for any completed status files
+        and reports the result to the frontend.
+        """
+        try:
+            # Check if we have a pending remote self-update request
+            if not self._pending_request_file.exists():
+                logger.debug("No pending remote self-update request found")
+                return
+            
+            pending_request_id = self._pending_request_file.read_text().strip()
+            if not pending_request_id:
+                self._pending_request_file.unlink(missing_ok=True)
+                return
+            
+            logger.info(f"Found pending remote self-update request: {pending_request_id}")
+            
+            # Look for the status file
+            status_file = self.update_status_dir / f"{pending_request_id}.json"
+            
+            # Give the coordinator a moment to finish writing (in case we started very fast)
+            for _ in range(10):
+                if status_file.exists():
+                    break
+                await asyncio.sleep(1)
+            
+            if status_file.exists():
+                with open(status_file, 'r') as f:
+                    status = json.load(f)
+                
+                # Clean up
+                status_file.unlink(missing_ok=True)
+                self._pending_request_file.unlink(missing_ok=True)
+                
+                # Refresh remote version
+                self._refresh_component_version('remote')
+                self.components['remote']['version_info'].update_available = False
+                
+                # Report result to frontend
+                if self._dispatch_callback:
+                    result = {
+                        "success": status.get('success', False),
+                        "message": status.get('message', 'Remote self-update completed'),
+                        "level": "info" if status.get('success') else "error"
+                    }
+                    self._dispatch_callback(result, "log")
+                    logger.info(f"Reported pending remote update result: success={status.get('success')}")
+                    
+                    # Also refresh system info for the frontend
+                    await asyncio.sleep(1)
+                else:
+                    logger.warning("No dispatch callback set, cannot report pending update result")
+            else:
+                logger.warning(f"Pending request {pending_request_id} has no status file yet — coordinator may still be processing")
+                # Don't clean up the pending file; we'll check again on next startup
+                
+        except Exception as e:
+            logger.error(f"Error checking pending status: {e}", exc_info=True)
+    
     async def start_periodic_check(self):
         """Start the periodic update checking task"""
         if self._periodic_check_task is None:
             self._running = True
+            # Check for pending status from a previous remote self-update
+            await self.check_pending_status()
             self._periodic_check_task = asyncio.create_task(self._periodic_check_loop())
             logger.info(f"Started periodic update checking (interval: {self.check_interval_hours}h)")
     
@@ -134,9 +210,9 @@ class ComponentUpdater:
     
     async def _periodic_check_loop(self):
         """Periodically check for updates"""
-        # Initial delay of 5 minutes after startup
-        # TODO: make this configurable?
-        #await asyncio.sleep(300)
+        # Initial delay of 2 minutes after startup to let all services stabilize
+        logger.info("Waiting 120 seconds before first update check (service stabilization)...")
+        await asyncio.sleep(120)
         
         while self._running:
             try:
@@ -373,6 +449,13 @@ class ComponentUpdater:
                 json.dump(request, f, indent=2)
             
             logger.info(f"Update request written: {request_file}")
+            
+            # For remote self-update: save the request ID so the new container
+            # can pick up the result after restart
+            if component_key == 'remote':
+                self._pending_request_file.parent.mkdir(parents=True, exist_ok=True)
+                self._pending_request_file.write_text(request_id)
+                logger.info(f"Saved pending remote self-update request ID: {request_id}")
             
             # Poll for status response
             status = await self._wait_for_status(request_id, timeout=600)  # 10 minute timeout
@@ -635,9 +718,10 @@ class ComponentUpdater:
         return result
     
     async def _wait_for_status(self, request_id: str, timeout: int = 600) -> Optional[dict]:
-        """Wait for status response from coordinator"""
+        """Wait for status response from coordinator, forwarding progress updates"""
         status_file = self.update_status_dir / f"{request_id}.json"
         start_time = time.time()
+        last_phase = None
         
         logger.info(f"Polling for status: {status_file}")
         
@@ -647,7 +731,26 @@ class ComponentUpdater:
                     with open(status_file, 'r') as f:
                         status = json.load(f)
                     
-                    # Clean up status file
+                    # Check if this is an in-progress status (phase update)
+                    if status.get('message') == 'in_progress':
+                        phase = status.get('phase', 'processing')
+                        if phase != last_phase:
+                            last_phase = phase
+                            # Forward progress to frontend
+                            if self._dispatch_callback:
+                                progress_msg = {
+                                    "success": True,
+                                    "message": f"Update in progress: {phase.replace('_', ' ')}...",
+                                    "level": "info",
+                                    "phase": phase
+                                }
+                                self._dispatch_callback(progress_msg, "updater_progress")
+                            logger.info(f"Update progress for {request_id}: {phase}")
+                        # Keep polling — the final status will overwrite this file
+                        await asyncio.sleep(1)
+                        continue
+                    
+                    # Final status — clean up and return
                     status_file.unlink()
                     
                     logger.info(f"Received status for request {request_id}")
